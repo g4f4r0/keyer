@@ -37,7 +37,7 @@ The test repeats a deterministic English, Spanish, Portuguese, and code-switched
 
 ```sh
 swift test
-./scripts/build-local.sh
+./scripts/build.sh
 open "build/Release/Keyer.app"
 ```
 
