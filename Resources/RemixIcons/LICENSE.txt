@@ -1,0 +1,9 @@
+Remix Icon License v1.0
+Version 1.0 - January 2026
+Copyright (c) 2017-2026 Remix Design
+
+This project includes individual Remix Icon SVG assets under the Remix Icon
+License v1.0. The complete license is available at:
+https://github.com/Remix-Design/RemixIcon/blob/master/License
+
+Icons by Remix Icon: https://remixicon.com

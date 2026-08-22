@@ -1,0 +1,20 @@
+NemoTextProcessing / text-processing-rs v0.3.0
+
+Source: https://github.com/FluidInference/text-processing-rs
+License: Apache License 2.0
+
+The binary includes permissively licensed NVIDIA NeMo Text Processing grammars,
+rustfst, flate2, and other Rust dependencies. Full upstream attribution:
+https://github.com/FluidInference/FluidAudio/tree/main/ThirdPartyLicenses
+
+NVIDIA NeMo Text Processing
+Copyright (c) NVIDIA CORPORATION & AFFILIATES
+License: Apache License 2.0
+
+rustfst
+Copyright (c) Alexandre Caulier and contributors
+License: MIT OR Apache License 2.0
+
+flate2
+Copyright (c) Alex Crichton and contributors
+License: MIT OR Apache License 2.0
