@@ -203,7 +203,11 @@ private extension HoldShortcut {
 private enum KeyerMenuBarIcon {
     static let image: NSImage = {
         let fallback = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Keyer") ?? NSImage()
-        guard let url = Bundle.main.url(forResource: "KeyerMenuIcon", withExtension: "svg"),
+        guard let url = Bundle.main.url(
+            forResource: "chat-voice-fill",
+            withExtension: "svg",
+            subdirectory: "RemixIcons"
+        ),
               let image = NSImage(contentsOf: url) else {
             return fallback
         }
