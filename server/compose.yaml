@@ -2,8 +2,9 @@ services:
   keyer:
     build: .
     restart: unless-stopped
+    init: true
     ports:
-      - "${KEYER_PORT:-3427}:3427"
+      - "127.0.0.1:${KEYER_PORT:-3427}:3427"
     environment:
       PORT: "3427"
       DATABASE_PATH: /app/data/keyer.sqlite
@@ -11,6 +12,15 @@ services:
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:3427}"
     volumes:
       - keyer-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
   keyer-data:
