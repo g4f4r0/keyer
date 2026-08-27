@@ -98,6 +98,24 @@ actor RemoteTranscriptStore {
         }
     }
 
+    func records() async throws -> [TranscriptArchiveRecord] {
+        guard let token = try ProviderKeychain(
+            service: "com.keyer.app.server-credentials",
+            account: "upload-token"
+        ).read(), !token.isEmpty else {
+            throw CloudProviderError.missingAPIKey
+        }
+        var request = URLRequest(url: baseURL)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw CloudProviderError.invalidResponse
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode([TranscriptArchiveRecord].self, from: data)
+    }
+
     func syncMeeting(_ record: TranscriptArchiveRecord, audioURL: URL) async throws {
         try await sync(record)
         guard let token = try ProviderKeychain(

@@ -59,6 +59,14 @@ export function saveRecord(input: { id: string; kind: "dictation" | "meeting"; p
   `).run(input.id, input.kind, input.payload, input.createdAt)
 }
 
+export function listRecords(): unknown[] {
+  return sqlite.query<{ payload: string }, []>(`
+    SELECT payload FROM records ORDER BY created_at DESC LIMIT 500
+  `).all().flatMap(({ payload }) => {
+    try { return [JSON.parse(payload)] } catch { return [] }
+  })
+}
+
 export function attachRecordAudio(id: string, audioPath: string): boolean {
   return sqlite.query(`UPDATE records SET audio_path = ? WHERE id = ? AND kind = 'meeting'`)
     .run(audioPath, id).changes > 0

@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { authenticated, json } from "@/api"
-import { saveRecord } from "@/db"
+import { listRecords, saveRecord } from "@/db"
 
 export const Route = createFileRoute("/api/records")({
   server: {
     handlers: {
+      GET: ({ request }) => authenticated(request, () => json(listRecords())),
       POST: ({ request }) => authenticated(request, async () => {
         let body: unknown
         try { body = await request.json() } catch { return json({ error: "Invalid JSON" }, 400) }

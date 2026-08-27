@@ -18,6 +18,12 @@ struct KeyerApp: App {
         }
         .menuBarExtraStyle(.menu)
 
+        Window("History", id: "history") {
+            HistoryView()
+        }
+        .defaultSize(width: 1040, height: 680)
+        .windowResizability(.contentMinSize)
+
         Settings {
             SettingsView(
                 coordinator: appDelegate.coordinator,
@@ -30,6 +36,7 @@ struct KeyerApp: App {
 }
 
 private struct KeyerMenu: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var coordinator: DictationCoordinator
     @ObservedObject var meetingCoordinator: MeetingCoordinator
 
@@ -47,6 +54,12 @@ private struct KeyerMenu: View {
         }
 
         Divider()
+
+        Button("History", systemImage: "clock") {
+            openWindow(id: "history")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        .keyboardShortcut("h", modifiers: [.command, .shift])
 
         SettingsLink {
             Label("Settings…", systemImage: "gearshape")
