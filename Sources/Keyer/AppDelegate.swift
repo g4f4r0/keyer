@@ -28,6 +28,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client: client,
             configuration: providerSettings.configuration
         )
+        let meetingSpeech = OpenRouterSpeechTranscriptionProvider(
+            client: client,
+            configuration: providerSettings.configuration,
+            modelOverride: KeyerConfiguration.shared.string(
+                "models.meeting_speech", default: "openai/gpt-transcribe:nitro"
+            )
+        )
         let language = OpenRouterLanguageModelProvider(
             client: client,
             configuration: providerSettings.configuration
@@ -43,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             transcriptStore: transcriptStore
         )
         meetingCoordinator = MeetingCoordinator(
-            transcriber: speech,
+            transcriber: meetingSpeech,
             summarizer: language,
             transcriptStore: transcriptStore
         )

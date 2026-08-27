@@ -20,6 +20,7 @@ suggest_meetings = true
 
 [models]
 speech = "nvidia/parakeet-tdt-0.6b-v3"
+meeting_speech = "openai/gpt-transcribe:nitro"
 text = "openai/gpt-5.6-luna"
 
 [server]

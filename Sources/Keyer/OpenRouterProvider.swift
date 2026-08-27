@@ -124,10 +124,16 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
     ) * 1_024 * 1_024
     private let client: OpenRouterClient
     private let configuration: CloudProviderConfiguration
+    private let modelOverride: String?
 
-    init(client: OpenRouterClient, configuration: CloudProviderConfiguration) {
+    init(
+        client: OpenRouterClient,
+        configuration: CloudProviderConfiguration,
+        modelOverride: String? = nil
+    ) {
         self.client = client
         self.configuration = configuration
+        self.modelOverride = modelOverride
     }
 
     func prepare() async throws { try await client.prewarm() }
@@ -149,7 +155,7 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
 
     private func transcribeWAV(_ wav: Data) async throws -> SpeechTranscription {
         let start = ContinuousClock.now
-        let model = try await configuration.snapshot().speechModel
+        let model = try await selectedModel()
         let chunks = try WAVUploadChunker.chunks(wav, maximumBytes: Self.maximumUploadBytes)
         let texts: [String]
         if chunks.count == 1 {
@@ -163,7 +169,7 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
     private func transcribeLargeFile(_ fileURL: URL, fileSize: Int) async throws -> SpeechTranscription {
         guard fileSize > 44 else { throw CloudProviderError.invalidAudio }
         let start = ContinuousClock.now
-        let model = try await configuration.snapshot().speechModel
+        let model = try await selectedModel()
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
         let header = try handle.read(upToCount: 44) ?? Data()
@@ -232,6 +238,11 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
             ),
             model: model
         )
+    }
+
+    private func selectedModel() async throws -> String {
+        if let modelOverride { return modelOverride }
+        return try await configuration.snapshot().speechModel
     }
 
     private func transcribeConcurrently(_ chunks: [Data], model: String) async throws -> [String] {
