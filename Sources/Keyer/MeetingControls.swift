@@ -76,9 +76,9 @@ private struct MeetingControlView: View {
             .accessibilityLabel("Processing meeting")
         case .saved:
             iconButton(
-                .folderOpen,
-                fallback: "folder",
-                label: "Open meeting",
+                .close,
+                fallback: "xmark",
+                label: "Close",
                 action: coordinator.openSavedMeeting
             )
         case .failed:

@@ -31,17 +31,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client: client,
             configuration: providerSettings.configuration
         )
+        let transcriptStore = RemoteTranscriptStore()
         self.providerSettings = providerSettings
         openRouterClient = client
         speechProvider = speech
         languageProvider = language
         coordinator = DictationCoordinator(
             speechTranscriber: speech,
-            textCleanup: TextCleanupPipeline(providers: [language])
+            textCleanup: TextCleanupPipeline(providers: [language]),
+            transcriptStore: transcriptStore
         )
         meetingCoordinator = MeetingCoordinator(
             transcriber: speech,
-            summarizer: language
+            summarizer: language,
+            transcriptStore: transcriptStore
         )
         super.init()
     }

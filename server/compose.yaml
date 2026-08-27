@@ -8,6 +8,7 @@ services:
     environment:
       PORT: "3427"
       DATABASE_PATH: /app/data/keyer.sqlite
+      AUDIO_PATH: /app/data/audio
       UPLOAD_TOKEN: "${UPLOAD_TOKEN:?Set UPLOAD_TOKEN in server/.env}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:3427}"
     volumes:

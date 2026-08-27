@@ -19,6 +19,14 @@ sqlite.exec(`
     expires_at TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_shares_created_at ON shares(created_at DESC);
+  CREATE TABLE IF NOT EXISTS records (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('dictation', 'meeting')),
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    audio_path TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC);
 `)
 
 export interface Share {
@@ -42,4 +50,16 @@ export function createShare(input: Omit<Share, "createdAt">): Share {
   sqlite.query(`INSERT INTO shares (id, kind, title, content, expires_at) VALUES (?, ?, ?, ?, ?)`)
     .run(input.id, input.kind, input.title, input.content, input.expiresAt)
   return getShare(input.id)!
+}
+
+export function saveRecord(input: { id: string; kind: "dictation" | "meeting"; payload: string; createdAt: string }) {
+  sqlite.query(`
+    INSERT INTO records (id, kind, payload, created_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, payload = excluded.payload, created_at = excluded.created_at
+  `).run(input.id, input.kind, input.payload, input.createdAt)
+}
+
+export function attachRecordAudio(id: string, audioPath: string): boolean {
+  return sqlite.query(`UPDATE records SET audio_path = ? WHERE id = ? AND kind = 'meeting'`)
+    .run(audioPath, id).changes > 0
 }

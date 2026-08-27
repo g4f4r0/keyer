@@ -18,7 +18,6 @@ final class DictationCoordinator: ObservableObject {
     @Published private(set) var hotkeyOperational = false
     @Published private(set) var dictationLocked = false
     @Published private(set) var inputDevices: [AudioInputDevice] = []
-    @Published private(set) var transcriptArchiveStatus: TranscriptArchiveStatus = .ready
     @Published var holdShortcut: HoldShortcut {
         didSet {
             if let data = try? JSONEncoder().encode(holdShortcut) {
@@ -54,7 +53,7 @@ final class DictationCoordinator: ObservableObject {
     private let hotkey = HotkeyService()
     private let permissions = PermissionService()
     private let inserter = TextInsertionService()
-    private let transcriptArchive = TranscriptArchiveService()
+    private let transcriptStore: RemoteTranscriptStore
     private let hudModel = WaveHUDModel()
     private lazy var hud = WaveHUDPanel(model: hudModel)
     private var destination: TextInsertionService.Destination?
@@ -72,10 +71,12 @@ final class DictationCoordinator: ObservableObject {
 
     init(
         speechTranscriber: any SpeechTranscriptionProvider,
-        textCleanup: TextCleanupPipeline
+        textCleanup: TextCleanupPipeline,
+        transcriptStore: RemoteTranscriptStore
     ) {
         self.speechTranscriber = speechTranscriber
         self.textCleanup = textCleanup
+        self.transcriptStore = transcriptStore
         holdShortcut = Self.savedShortcut()
         inputDeviceUID = UserDefaults.standard.string(forKey: "input-device-uid") ?? ""
         showDockIcon = UserDefaults.standard.bool(forKey: "show-dock-icon")
@@ -195,24 +196,6 @@ final class DictationCoordinator: ObservableObject {
         launchAtLoginNeedsApproval = status == .requiresApproval
         if !launchAtLoginNeedsApproval, launchAtLoginMessage == "Approval is required in System Settings" {
             launchAtLoginMessage = ""
-        }
-    }
-
-    func openTranscriptArchive() {
-        Task { [weak self] in
-            guard let self else { return }
-            if let url = await self.transcriptArchive.documentsURL() {
-                NSWorkspace.shared.open(url)
-            }
-        }
-    }
-
-    func openTranscriptArchive(kind: TranscriptArchiveRecord.Kind) {
-        Task { [weak self] in
-            guard let self else { return }
-            if let url = await self.transcriptArchive.documentsURL(for: kind) {
-                NSWorkspace.shared.open(url)
-            }
         }
     }
 
@@ -404,14 +387,7 @@ final class DictationCoordinator: ObservableObject {
                     model: resultModel,
                     audioDurationSeconds: captured.durationSeconds
                 )
-                do {
-                    self.transcriptArchiveStatus = try await self.transcriptArchive.stage(archiveRecord)
-                } catch {
-                    let message = (error as NSError).localizedDescription
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                    self.transcriptArchiveStatus = .failed("Couldn’t save dictation")
-                    self.logger.error("Dictation archive staging failed: \(message, privacy: .public)")
-                }
+                try await self.transcriptStore.sync(archiveRecord)
                 let insertionStart = ContinuousClock.now
                 self.event("insertionStarted", id: id)
                 let insertion = await self.inserter.insert(transcript, at: self.destination)

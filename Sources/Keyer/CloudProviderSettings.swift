@@ -1,5 +1,51 @@
 import Foundation
 import Security
+import WaveCore
+
+actor RemoteTranscriptStore {
+    private let baseURL = URL(string: "https://keyer.hellogafaro.net/api/records")!
+
+    func sync(_ record: TranscriptArchiveRecord) async throws {
+        guard let token = try ProviderKeychain(
+            service: "com.keyer.app.server-credentials",
+            account: "upload-token"
+        ).read(), !token.isEmpty else {
+            throw CloudProviderError.missingAPIKey
+        }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var request = URLRequest(url: baseURL)
+        request.httpMethod = "POST"
+        request.httpBody = try encoder.encode(record)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 201 else {
+            throw CloudProviderError.invalidResponse
+        }
+    }
+
+    func syncMeeting(_ record: TranscriptArchiveRecord, audioURL: URL) async throws {
+        try await sync(record)
+        guard let token = try ProviderKeychain(
+            service: "com.keyer.app.server-credentials",
+            account: "upload-token"
+        ).read(), !token.isEmpty else {
+            throw CloudProviderError.missingAPIKey
+        }
+        let endpoint = baseURL
+            .appendingPathComponent(record.id.uuidString.lowercased())
+            .appendingPathComponent("audio")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "PUT"
+        request.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await URLSession.shared.upload(for: request, fromFile: audioURL)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw CloudProviderError.invalidResponse
+        }
+    }
+}
 
 struct CloudProviderSnapshot: Sendable {
     let apiKey: String
@@ -157,7 +203,7 @@ final class CloudProviderSettings: ObservableObject {
 
 }
 
-private struct ProviderKeychain {
+struct ProviderKeychain {
     private let service: String
     private let account: String
 

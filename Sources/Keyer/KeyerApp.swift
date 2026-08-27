@@ -103,7 +103,7 @@ private struct KeyerMenu: View {
             Button("Summarizing", systemImage: "text.badge.star") {}
                 .disabled(true)
         case .saved:
-            Button("Open Meeting", systemImage: "arrow.up.forward.app") {
+            Button("Done", systemImage: "checkmark") {
                 meetingCoordinator.openSavedMeeting()
             }
         case .failed:

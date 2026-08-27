@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Combine
 import Foundation
 import os
@@ -49,7 +50,7 @@ final class MeetingCoordinator: ObservableObject {
     var beforeProcessing: () async -> Void = {}
 
     private let audio = MeetingAudioCaptureService()
-    private let archive = TranscriptArchiveService()
+    private let transcriptStore: RemoteTranscriptStore
     private let pipeline: MeetingProcessingPipeline
     private lazy var controlsPanel = MeetingControlsPanel(coordinator: self)
     private var timerTask: Task<Void, Never>?
@@ -71,12 +72,14 @@ final class MeetingCoordinator: ObservableObject {
 
     init(
         transcriber: any SpeechTranscriptionProvider,
-        summarizer: any MeetingSummaryProvider
+        summarizer: any MeetingSummaryProvider,
+        transcriptStore: RemoteTranscriptStore
     ) {
         pipeline = MeetingProcessingPipeline(
             transcriber: transcriber,
             summarizer: MeetingSummaryPipeline(providers: [summarizer])
         )
+        self.transcriptStore = transcriptStore
         showControls = UserDefaults.standard.object(forKey: "show-meeting-controls") as? Bool ?? true
         suggestMeetings = UserDefaults.standard.object(forKey: "suggest-meetings") as? Bool ?? true
     }
@@ -206,16 +209,7 @@ final class MeetingCoordinator: ObservableObject {
     }
 
     func openSavedMeeting() {
-        guard case let .saved(url) = state else { return }
-        if let url {
-            NSWorkspace.shared.open(url)
-        } else {
-            Task {
-                if let folder = await archive.documentsURL(for: .meeting) {
-                    NSWorkspace.shared.open(folder)
-                }
-            }
-        }
+        guard case .saved = state else { return }
         setState(.idle)
     }
 
@@ -253,17 +247,32 @@ final class MeetingCoordinator: ObservableObject {
                 id: UUID(),
                 createdAt: meetingCreatedAt ?? .now
             )
-            _ = try await archive.stage(record)
-            let documentURL = await archive.documentURL(for: record)
+            let compressedAudioURL = try await compressMeetingAudio(capture.fileURL)
+            defer { try? FileManager.default.removeItem(at: compressedAudioURL) }
+            try await transcriptStore.syncMeeting(record, audioURL: compressedAudioURL)
             try? FileManager.default.removeItem(at: capture.fileURL)
             retryCapture = nil
-            setState(.saved(documentURL))
+            setState(.saved(nil))
         } catch is CancellationError {
             return
         } catch {
             logger.error("Meeting processing failed: \(String(describing: error), privacy: .public)")
             fail("Meeting processing failed")
         }
+    }
+
+    private func compressMeetingAudio(_ sourceURL: URL) async throws -> URL {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keyer-\(UUID().uuidString.lowercased()).m4a")
+        let asset = AVURLAsset(url: sourceURL)
+        guard let exporter = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetAppleM4A
+        ) else {
+            throw CloudProviderError.invalidResponse
+        }
+        try await exporter.export(to: destination, as: .m4a)
+        return destination
     }
 
     private func startElapsedTimer() {

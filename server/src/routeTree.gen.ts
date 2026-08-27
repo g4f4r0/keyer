@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as IdRouteImport } from './routes/$id'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiRecordsRouteImport } from './routes/api/records'
 import { Route as ApiSharesRouteImport } from './routes/api/shares'
 import { Route as ApiSharesIdRouteImport } from './routes/api/shares.$id'
+import { Route as ApiRecordsIdAudioRouteImport } from './routes/api/records.$id.audio'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -30,6 +32,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRecordsRoute = ApiRecordsRouteImport.update({
+  id: '/api/records',
+  path: '/api/records',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSharesRoute = ApiSharesRouteImport.update({
   id: '/api/shares',
   path: '/api/shares',
@@ -40,47 +47,75 @@ const ApiSharesIdRoute = ApiSharesIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ApiSharesRoute,
 } as any)
+const ApiRecordsIdAudioRoute = ApiRecordsIdAudioRouteImport.update({
+  id: '/$id/audio',
+  path: '/$id/audio',
+  getParentRoute: () => ApiRecordsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$id': typeof IdRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/records': typeof ApiRecordsRouteWithChildren
   '/api/shares': typeof ApiSharesRouteWithChildren
   '/api/shares/$id': typeof ApiSharesIdRoute
+  '/api/records/$id/audio': typeof ApiRecordsIdAudioRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$id': typeof IdRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/records': typeof ApiRecordsRouteWithChildren
   '/api/shares': typeof ApiSharesRouteWithChildren
   '/api/shares/$id': typeof ApiSharesIdRoute
+  '/api/records/$id/audio': typeof ApiRecordsIdAudioRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$id': typeof IdRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/records': typeof ApiRecordsRouteWithChildren
   '/api/shares': typeof ApiSharesRouteWithChildren
   '/api/shares/$id': typeof ApiSharesIdRoute
+  '/api/records/$id/audio': typeof ApiRecordsIdAudioRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$id' | '/api/health' | '/api/shares' | '/api/shares/$id'
+  fullPaths:
+    | '/'
+    | '/$id'
+    | '/api/health'
+    | '/api/records'
+    | '/api/shares'
+    | '/api/shares/$id'
+    | '/api/records/$id/audio'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$id' | '/api/health' | '/api/shares' | '/api/shares/$id'
+  to:
+    | '/'
+    | '/$id'
+    | '/api/health'
+    | '/api/records'
+    | '/api/shares'
+    | '/api/shares/$id'
+    | '/api/records/$id/audio'
   id:
     | '__root__'
     | '/'
     | '/$id'
     | '/api/health'
+    | '/api/records'
     | '/api/shares'
     | '/api/shares/$id'
+    | '/api/records/$id/audio'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   IdRoute: typeof IdRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiRecordsRoute: typeof ApiRecordsRouteWithChildren
   ApiSharesRoute: typeof ApiSharesRouteWithChildren
 }
 
@@ -107,6 +142,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/records': {
+      id: '/api/records'
+      path: '/api/records'
+      fullPath: '/api/records'
+      preLoaderRoute: typeof ApiRecordsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/shares': {
       id: '/api/shares'
       path: '/api/shares'
@@ -121,8 +163,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSharesIdRouteImport
       parentRoute: typeof ApiSharesRoute
     }
+    '/api/records/$id/audio': {
+      id: '/api/records/$id/audio'
+      path: '/$id/audio'
+      fullPath: '/api/records/$id/audio'
+      preLoaderRoute: typeof ApiRecordsIdAudioRouteImport
+      parentRoute: typeof ApiRecordsRoute
+    }
   }
 }
+
+interface ApiRecordsRouteChildren {
+  ApiRecordsIdAudioRoute: typeof ApiRecordsIdAudioRoute
+}
+
+const ApiRecordsRouteChildren: ApiRecordsRouteChildren = {
+  ApiRecordsIdAudioRoute: ApiRecordsIdAudioRoute,
+}
+
+const ApiRecordsRouteWithChildren = ApiRecordsRoute._addFileChildren(
+  ApiRecordsRouteChildren,
+)
 
 interface ApiSharesRouteChildren {
   ApiSharesIdRoute: typeof ApiSharesIdRoute
@@ -140,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   IdRoute: IdRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiRecordsRoute: ApiRecordsRouteWithChildren,
   ApiSharesRoute: ApiSharesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
