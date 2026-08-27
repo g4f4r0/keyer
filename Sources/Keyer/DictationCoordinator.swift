@@ -80,7 +80,7 @@ final class DictationCoordinator: ObservableObject {
         holdShortcut = Self.savedShortcut()
         inputDeviceUID = UserDefaults.standard.string(forKey: "input-device-uid") ?? ""
         showDockIcon = UserDefaults.standard.bool(forKey: "show-dock-icon")
-        cleanUpSpokenText = UserDefaults.standard.object(forKey: "clean-up-spoken-text") as? Bool ?? true
+        cleanUpSpokenText = UserDefaults.standard.object(forKey: "clean-up-spoken-text") as? Bool ?? false
         refreshLaunchAtLoginStatus()
     }
 

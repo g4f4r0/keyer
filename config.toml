@@ -6,7 +6,7 @@ show_dock_icon = false
 
 [dictation]
 input_device_uid = ""
-clean_up_spoken_text = true
+clean_up_spoken_text = false
 
 [shortcut]
 kind = "functionKey"

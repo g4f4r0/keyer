@@ -41,7 +41,7 @@ struct KeyerConfiguration: Sendable {
             "show-menu-bar-icon": bool("app.show_menu_bar_icon", default: true),
             "show-dock-icon": bool("app.show_dock_icon", default: false),
             "input-device-uid": string("dictation.input_device_uid", default: ""),
-            "clean-up-spoken-text": bool("dictation.clean_up_spoken_text", default: true),
+            "clean-up-spoken-text": bool("dictation.clean_up_spoken_text", default: false),
             "show-meeting-controls": bool("meetings.show_controls", default: true),
             "suggest-meetings": bool("meetings.suggest_meetings", default: true),
             "openrouter-speech-model": string("models.speech", default: "nvidia/parakeet-tdt-0.6b-v3"),
