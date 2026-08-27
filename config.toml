@@ -29,7 +29,7 @@ detected_app_identifiers = "zoom.us,msteams,teams2,webex"
 [models]
 speech = "nvidia/parakeet-tdt-0.6b-v3"
 meeting_speech = "openai/gpt-transcribe:nitro"
-meeting_summary = "nvidia/nemotron-3.5-lightning:nitro"
+meeting_summary = "openai/gpt-5.6-luna:nitro"
 text = "openai/gpt-5.6-luna"
 
 [generation]

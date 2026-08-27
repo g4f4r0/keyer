@@ -54,7 +54,7 @@ struct KeyerConfiguration: Sendable {
             "suggest-meetings": bool("meetings.suggest_meetings", default: true),
             "openrouter-speech-model": string("models.speech", default: "nvidia/parakeet-tdt-0.6b-v3"),
             "openrouter-meeting-speech-model": string("models.meeting_speech", default: "openai/gpt-transcribe:nitro"),
-            "openrouter-meeting-summary-model": string("models.meeting_summary", default: "nvidia/nemotron-3.5-lightning:nitro"),
+            "openrouter-meeting-summary-model": string("models.meeting_summary", default: "openai/gpt-5.6-luna:nitro"),
             "openrouter-text-model": string("models.text", default: "openai/gpt-5.6-luna"),
             "hold-shortcut": (try? JSONEncoder().encode(shortcut)) ?? Data(),
         ])
@@ -199,7 +199,7 @@ private actor OpenRouterModelCatalog {
 final class CloudProviderSettings: ObservableObject {
     static let defaultSpeechModel = "nvidia/parakeet-tdt-0.6b-v3"
     static let defaultMeetingSpeechModel = "openai/gpt-transcribe:nitro"
-    static let defaultMeetingSummaryModel = "nvidia/nemotron-3.5-lightning:nitro"
+    static let defaultMeetingSummaryModel = "openai/gpt-5.6-luna:nitro"
     static let defaultTextModel = "openai/gpt-5.6-luna"
 
     @Published private(set) var hasAPIKey: Bool
