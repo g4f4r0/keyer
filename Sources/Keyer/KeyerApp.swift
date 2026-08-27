@@ -48,11 +48,11 @@ private struct KeyerMenu: View {
 
         Divider()
 
-        Button("Open Meetings in iCloud Drive", systemImage: "person.2") {
+        Button("Open Meeting History", systemImage: "person.2") {
             coordinator.openTranscriptArchive(kind: .meeting)
         }
 
-        Button("Open Dictations in iCloud Drive", systemImage: "text.document") {
+        Button("Open Dictation History", systemImage: "text.document") {
             coordinator.openTranscriptArchive(kind: .dictation)
         }
 

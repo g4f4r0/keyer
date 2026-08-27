@@ -18,7 +18,7 @@ final class DictationCoordinator: ObservableObject {
     @Published private(set) var hotkeyOperational = false
     @Published private(set) var dictationLocked = false
     @Published private(set) var inputDevices: [AudioInputDevice] = []
-    @Published private(set) var transcriptArchiveStatus: TranscriptArchiveStatus = .checking
+    @Published private(set) var transcriptArchiveStatus: TranscriptArchiveStatus = .ready
     @Published var holdShortcut: HoldShortcut {
         didSet {
             if let data = try? JSONEncoder().encode(holdShortcut) {
@@ -63,8 +63,6 @@ final class DictationCoordinator: ObservableObject {
     private var modelPreparationTask: Task<Void, Error>?
     private var recordingLimitWarningTask: Task<Void, Never>?
     private var hotkeyWatchdog: Task<Void, Never>?
-    private var transcriptArchiveMonitorTask: Task<Void, Never>?
-    private var transcriptArchiveFlushTask: Task<Void, Never>?
     private var sessionStartedAt: ContinuousClock.Instant?
     private var signpostIDs: [UUID: OSSignpostID] = [:]
     private let performanceLog = OSLog(subsystem: "com.keyer.app", category: "pipeline")
@@ -105,7 +103,6 @@ final class DictationCoordinator: ObservableObject {
         hotkey.updateBinding(holdShortcut)
         hotkeyOperational = hotkey.start()
         startHotkeyWatchdog()
-        startTranscriptArchiveMonitor()
         refreshReadiness()
         Task(priority: .utility) { [speechTranscriber] in
             try? await speechTranscriber.prepare()
@@ -122,10 +119,6 @@ final class DictationCoordinator: ObservableObject {
         recordingLimitWarningTask = nil
         hotkeyWatchdog?.cancel()
         hotkeyWatchdog = nil
-        transcriptArchiveMonitorTask?.cancel()
-        transcriptArchiveMonitorTask = nil
-        transcriptArchiveFlushTask?.cancel()
-        transcriptArchiveFlushTask = nil
         audio.cancel()
         hotkey.stop()
     }
@@ -205,18 +198,11 @@ final class DictationCoordinator: ObservableObject {
         }
     }
 
-    func retryTranscriptArchiveSync() {
-        flushTranscriptArchive()
-    }
-
     func openTranscriptArchive() {
         Task { [weak self] in
             guard let self else { return }
             if let url = await self.transcriptArchive.documentsURL() {
                 NSWorkspace.shared.open(url)
-                self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
-            } else {
-                self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
             }
         }
     }
@@ -227,7 +213,6 @@ final class DictationCoordinator: ObservableObject {
             if let url = await self.transcriptArchive.documentsURL(for: kind) {
                 NSWorkspace.shared.open(url)
             }
-            self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
         }
     }
 
@@ -266,32 +251,6 @@ final class DictationCoordinator: ObservableObject {
                     self.refreshReadiness()
                 }
             }
-        }
-    }
-
-    private func startTranscriptArchiveMonitor() {
-        transcriptArchiveMonitorTask?.cancel()
-        transcriptArchiveMonitorTask = Task { [weak self] in
-            guard let self else { return }
-            self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
-            }
-        }
-    }
-
-    private func flushTranscriptArchive() {
-        transcriptArchiveFlushTask?.cancel()
-        transcriptArchiveFlushTask = Task { [weak self] in
-            guard let self else { return }
-            self.transcriptArchiveStatus = await self.transcriptArchive.synchronize()
-            self.transcriptArchiveFlushTask = nil
         }
     }
 
@@ -450,7 +409,7 @@ final class DictationCoordinator: ObservableObject {
                 } catch {
                     let message = (error as NSError).localizedDescription
                         .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                    self.transcriptArchiveStatus = .failed("Couldn’t save dictation", 0)
+                    self.transcriptArchiveStatus = .failed("Couldn’t save dictation")
                     self.logger.error("Dictation archive staging failed: \(message, privacy: .public)")
                 }
                 let insertionStart = ContinuousClock.now
@@ -477,7 +436,6 @@ final class DictationCoordinator: ObservableObject {
                                           audioDurationSeconds: captured.durationSeconds,
                                           droppedBuffers: captured.droppedBuffers,
                                           model: resultModel))
-                self.flushTranscriptArchive()
                 self.complete(id: id)
             } catch AudioCaptureError.tooShort {
                 self.fail(id: id, error: AudioCaptureError.tooShort)

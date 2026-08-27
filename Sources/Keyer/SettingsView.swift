@@ -127,7 +127,7 @@ private struct ProviderSettings: View {
             }
 
             Section {
-                Text("Models are independent so each task can be optimized for quality, price, and latency. Your API key syncs securely through iCloud Keychain")
+                Text("Models are independent so each task can be optimized for quality, price, and latency. Your API key stays in this Mac’s Keychain")
                     .foregroundStyle(.secondary)
             }
         }
@@ -245,26 +245,20 @@ private struct GeneralSettings: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("iCloud History") {
+            Section("Local History") {
                 LabeledContent("Status") {
                     Label(coordinator.transcriptArchiveStatus.label,
                           systemImage: coordinator.transcriptArchiveStatus.isAvailable
-                            ? "checkmark.icloud.fill" : "icloud.slash")
+                            ? "checkmark.circle.fill" : "exclamationmark.circle")
                         .foregroundStyle(coordinator.transcriptArchiveStatus.isAvailable
                             ? .green : .secondary)
                 }
 
-                HStack {
-                    Button("Open in iCloud Drive") {
-                        coordinator.openTranscriptArchive()
-                    }
-                    Button("Try Again") {
-                        coordinator.retryTranscriptArchiveSync()
-                    }
-                    .disabled(coordinator.transcriptArchiveStatus == .checking)
+                Button("Open Keyer History") {
+                    coordinator.openTranscriptArchive()
                 }
 
-                Text("History and portable preferences sync through iCloud. The selected microphone and login item stay specific to this Mac")
+                Text("Completed dictations and meetings are saved as readable Markdown files in Documents/Keyer")
                     .foregroundStyle(.secondary)
             }
 

@@ -254,7 +254,6 @@ final class MeetingCoordinator: ObservableObject {
                 createdAt: meetingCreatedAt ?? .now
             )
             _ = try await archive.stage(record)
-            _ = await archive.synchronize()
             let documentURL = await archive.documentURL(for: record)
             try? FileManager.default.removeItem(at: capture.fileURL)
             retryCapture = nil

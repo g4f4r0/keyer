@@ -53,12 +53,6 @@ signing_line=$(security find-identity -v -p codesigning | sed -n '/"Apple Develo
 signing_identity=$(print -r -- "$signing_line" | sed -n 's/.*\([0-9A-F]\{40\}\) "Apple Development:.*/\1/p')
 resolved_entitlements="$staging_directory/Keyer.entitlements"
 cp "$project_root/Resources/Keyer.entitlements" "$resolved_entitlements"
-# Restricted iCloud entitlements are applied by Xcode only when an eligible
-# provisioning profile is embedded. This local manual-signing path omits them.
-/usr/libexec/PlistBuddy -c \
-  "Delete :com.apple.developer.ubiquity-container-identifiers" "$resolved_entitlements"
-/usr/libexec/PlistBuddy -c \
-  "Delete :com.apple.developer.ubiquity-kvstore-identifier" "$resolved_entitlements"
 if [[ -z "$signing_identity" ]]; then
   signing_identity="-"
   print "No Apple Development identity found; using ad-hoc signing."

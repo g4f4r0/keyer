@@ -6,4 +6,4 @@
 - Large recordings are split to stay below provider upload limits; representative meeting-boundary quality testing remains required
 - Meeting capture currently records the selected microphone; system-audio capture remains a separate production gate
 - Input Monitoring changes may require one relaunch after enabling Keyer in System Settings
-- Bluetooth and USB hot-swap, sleep and wake, broad insertion compatibility, notarization, and two-Mac iCloud history, settings, and Keychain propagation still require release certification
+- Bluetooth and USB hot-swap, sleep and wake, broad insertion compatibility, notarization, and share-server deployment still require release certification

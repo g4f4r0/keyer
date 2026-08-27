@@ -1,0 +1,16 @@
+services:
+  keyer:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${KEYER_PORT:-3427}:3427"
+    environment:
+      PORT: "3427"
+      DATABASE_PATH: /app/data/keyer.sqlite
+      UPLOAD_TOKEN: "${UPLOAD_TOKEN:?Set UPLOAD_TOKEN in server/.env}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:3427}"
+    volumes:
+      - keyer-data:/app/data
+
+volumes:
+  keyer-data:

@@ -4,15 +4,17 @@
 
 <h1 align="center">Keyer</h1>
 
-<p align="center">Fast BYOK dictation with iCloud history</p>
+<p align="center">Fast BYOK dictation with local Markdown history</p>
 
 Hold Fn, speak, and release. Keyer transcribes through your provider key, copies the text to the clipboard, and pastes it into the focused field when macOS allows it.
 
 Keyer is built around two provider-neutral capabilities: speech transcription and text generation. OpenRouter is the first BYOK adapter, with independent model selection for speech and text work. Language detection is automatic, including mixed-language speech.
 
-## iCloud history
+## Local history
 
-Each completed dictation is stored in iCloud Drive as a Markdown file with YAML front matter. The files sync across Macs signed into the same Apple Account and remain readable without Keyer.
+Each completed dictation or meeting is stored under `Documents/Keyer` as a Markdown file with YAML front matter. The files remain readable without Keyer.
+
+The optional [`server`](server/) is a minimal TanStack Start, Bun, and SQLite app for public share links.
 
 ## Performance
 

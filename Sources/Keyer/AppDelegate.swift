@@ -21,8 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let diagnosticPeak = OSAllocatedUnfairLock(initialState: Float.zero)
 
     override init() {
-        let settingsSync = PortableSettingsSync.shared
-        settingsSync.bootstrap()
         let providerSettings = CloudProviderSettings()
         let client = OpenRouterClient(configuration: providerSettings.configuration)
         let speech = OpenRouterSpeechTranscriptionProvider(
@@ -46,49 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             summarizer: language
         )
         super.init()
-        settingsSync.onExternalChange = { [weak self] keys in
-            guard let self else { return }
-            let coordinator = self.coordinator
-            let meetingCoordinator = self.meetingCoordinator
-            let providerSettings = self.providerSettings
-            let defaults = UserDefaults.standard
-            if keys.contains("clean-up-spoken-text"),
-               let value = defaults.object(forKey: "clean-up-spoken-text") as? Bool,
-               coordinator.cleanUpSpokenText != value {
-                coordinator.cleanUpSpokenText = value
-            }
-            if keys.contains("show-dock-icon"),
-               let value = defaults.object(forKey: "show-dock-icon") as? Bool,
-               coordinator.showDockIcon != value {
-                coordinator.showDockIcon = value
-            }
-            if keys.contains("hold-shortcut"),
-               let data = defaults.data(forKey: "hold-shortcut"),
-               let value = try? JSONDecoder().decode(HoldShortcut.self, from: data),
-               coordinator.holdShortcut != value {
-                coordinator.holdShortcut = value
-            }
-            if keys.contains("show-meeting-controls"),
-               let value = defaults.object(forKey: "show-meeting-controls") as? Bool,
-               meetingCoordinator.showControls != value {
-                meetingCoordinator.showControls = value
-            }
-            if keys.contains("suggest-meetings"),
-               let value = defaults.object(forKey: "suggest-meetings") as? Bool,
-               meetingCoordinator.suggestMeetings != value {
-                meetingCoordinator.suggestMeetings = value
-            }
-            if keys.contains("openrouter-speech-model"),
-               let value = defaults.string(forKey: "openrouter-speech-model"),
-               providerSettings.speechModel != value {
-                providerSettings.speechModel = value
-            }
-            if keys.contains("openrouter-text-model"),
-               let value = defaults.string(forKey: "openrouter-text-model"),
-               providerSettings.textModel != value {
-                providerSettings.textModel = value
-            }
-        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -201,8 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runHistoryDiagnostic() {
         Task {
             let service = TranscriptArchiveService()
-            let status = await service.synchronize()
-            writeDiagnostic("history_status=\(status.label) iCloud_available=\(status.isAvailable)\n")
+            let available = await service.documentsURL() != nil
+            writeDiagnostic("history_status=\(available ? "Saved locally" : "Unavailable") local_available=\(available)\n")
             NSApp.terminate(nil)
         }
     }
@@ -241,11 +196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let staged = try await service.stage(record)
                 let stageMS = elapsedMilliseconds(since: stageStart)
                 let syncStart = ContinuousClock.now
-                let synchronized = await service.synchronize()
+                let localURL = await service.documentURL(for: record)
                 let syncMS = elapsedMilliseconds(since: syncStart)
                 let relativePath = (record.relativeDirectoryComponents + [record.documentFilename])
                     .joined(separator: "/")
-                writeDiagnostic("history_write=true staged=\(staged.label) synchronized=\(synchronized.label) stage_ms=\(stageMS) sync_ms=\(syncMS) path=\(relativePath) id=\(record.id.uuidString.lowercased())\n")
+                writeDiagnostic("history_write=true status=\(staged.label) local_file=\(localURL != nil) stage_ms=\(stageMS) lookup_ms=\(syncMS) path=\(relativePath) id=\(record.id.uuidString.lowercased())\n")
             } catch {
                 writeDiagnostic("history_write=false error=\(error.localizedDescription)\n")
             }

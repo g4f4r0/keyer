@@ -280,17 +280,12 @@ import Testing
     #expect(record.markdown.hasSuffix("---\n\nSummary\n"))
 }
 
-@Test func transcriptArchiveStagesLocallyThenSynchronizesMarkdown() async throws {
+@Test func transcriptArchiveWritesMarkdownLocally() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("keyer-archive-test-\(UUID().uuidString)", isDirectory: true)
-    let pending = root.appendingPathComponent("Pending", isDirectory: true)
-    let cloud = root.appendingPathComponent("Cloud Documents", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
 
-    let service = TranscriptArchiveService(
-        localQueueURL: pending,
-        cloudDocumentsURLProvider: { cloud }
-    )
+    let service = TranscriptArchiveService(historyURL: root)
     let date = try #require(ISO8601DateFormatter().date(from: "2026-08-22T16:30:00Z"))
     let id = UUID(uuidString: "3F6D608F-DBD4-4B5D-9CBA-D8EB7E44F15F")!
     let record = TranscriptArchiveRecord(
@@ -298,26 +293,20 @@ import Testing
         model: "test", audioDurationSeconds: 1
     )
 
-    #expect(try await service.stage(record) == .pending(1))
-    #expect(await service.synchronize() == .synced)
-    let document = cloud.appendingPathComponent("Dictations/2026/08")
+    #expect(try await service.stage(record) == .ready)
+    let document = root.appendingPathComponent("Dictations/2026/08")
         .appendingPathComponent(record.documentFilename)
     #expect(FileManager.default.fileExists(atPath: document.path))
     let markdown = try String(contentsOf: document, encoding: .utf8)
     #expect(markdown.contains("type: dictation"))
     #expect(markdown.hasSuffix("---\n\nFinal\n"))
-    #expect(!FileManager.default.fileExists(atPath: cloud.appendingPathComponent(".Keyer").path))
-    #expect((try? FileManager.default.contentsOfDirectory(atPath: pending.path).isEmpty) == true)
 }
 
 @Test func transcriptArchiveCreatesKindSpecificHistoryFolders() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("keyer-history-folders-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = TranscriptArchiveService(
-        localQueueURL: root.appendingPathComponent("queue", isDirectory: true),
-        cloudDocumentsURLProvider: { root.appendingPathComponent("cloud", isDirectory: true) }
-    )
+    let service = TranscriptArchiveService(historyURL: root)
 
     let meetings = try #require(await service.documentsURL(for: .meeting))
     let dictations = try #require(await service.documentsURL(for: .dictation))
@@ -331,13 +320,8 @@ import Testing
 @Test func transcriptArchiveAvoidsTimestampFilenameCollisionsWithoutIDs() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("keyer-archive-collision-test-\(UUID().uuidString)", isDirectory: true)
-    let pending = root.appendingPathComponent("Pending", isDirectory: true)
-    let cloud = root.appendingPathComponent("Cloud Documents", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = TranscriptArchiveService(
-        localQueueURL: pending,
-        cloudDocumentsURLProvider: { cloud }
-    )
+    let service = TranscriptArchiveService(historyURL: root)
     let date = Date(timeIntervalSince1970: 1_777_777_777.123)
     let first = TranscriptArchiveRecord(
         id: UUID(), kind: .dictation, createdAt: date, originalText: "First", finalText: "First",
@@ -350,8 +334,7 @@ import Testing
 
     _ = try await service.stage(first)
     _ = try await service.stage(second)
-    #expect(await service.synchronize() == .synced)
-    let directory = first.relativeDirectoryComponents.reduce(cloud) {
+    let directory = first.relativeDirectoryComponents.reduce(root) {
         $0.appendingPathComponent($1, isDirectory: true)
     }
     let filenames = try FileManager.default.contentsOfDirectory(atPath: directory.path)
@@ -361,23 +344,6 @@ import Testing
     ]))
     #expect(!filenames.contains(where: { $0.contains(first.id.uuidString.lowercased()) }))
     #expect(!filenames.contains(where: { $0.contains(second.id.uuidString.lowercased()) }))
-}
-
-@Test func transcriptArchiveRetainsPendingCopyWhenICloudIsUnavailable() async throws {
-    let root = FileManager.default.temporaryDirectory
-        .appendingPathComponent("keyer-archive-offline-test-\(UUID().uuidString)", isDirectory: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let service = TranscriptArchiveService(
-        localQueueURL: root.appendingPathComponent("Pending", isDirectory: true),
-        cloudDocumentsURLProvider: { nil }
-    )
-    let record = TranscriptArchiveRecord(
-        id: UUID(), kind: .dictation, originalText: "raw", finalText: "Final",
-        model: "test", audioDurationSeconds: 1
-    )
-
-    #expect(try await service.stage(record) == .pending(1))
-    #expect(await service.synchronize() == .iCloudUnavailable(1))
 }
 
 @Test func meetingSummaryUsesOneStringAndActionArray() throws {
@@ -400,7 +366,7 @@ import Testing
     **Facts:**
     - Elena confirmó el lanzamiento para el 14 de octubre.
     - James said transcription stays local on the Mac.
-    - Los documentos Markdown se sincronizan por iCloud.
+    - Los documentos Markdown se guardan localmente.
 
     **Actions:**
     - Ana | Preparar las notas de versión | 12 de octubre
@@ -589,15 +555,10 @@ import Testing
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("keyer-meeting-pipeline-test-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let cloud = root.appendingPathComponent("Cloud", isDirectory: true)
-    let archive = TranscriptArchiveService(
-        localQueueURL: root.appendingPathComponent("Pending", isDirectory: true),
-        cloudDocumentsURLProvider: { cloud }
-    )
+    let archive = TranscriptArchiveService(historyURL: root)
     let record = result.archiveRecord(id: UUID())
-    #expect(try await archive.stage(record) == .pending(1))
-    #expect(await archive.synchronize() == .synced)
-    let documentURL = (record.relativeDirectoryComponents + [record.documentFilename]).reduce(cloud) {
+    #expect(try await archive.stage(record) == .ready)
+    let documentURL = (record.relativeDirectoryComponents + [record.documentFilename]).reduce(root) {
         $0.appendingPathComponent($1)
     }
     let archived = try String(contentsOf: documentURL, encoding: .utf8)

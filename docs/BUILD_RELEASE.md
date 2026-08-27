@@ -14,7 +14,7 @@ The Xcode project has no third-party runtime dependency and builds the Apple Sil
 
 ## Developer ID archive
 
-Set your own team in Xcode; never commit team credentials or notarization secrets. Register `iCloud.com.keyer.app`, enable iCloud Documents and key-value storage for `com.keyer.app`, and regenerate the distribution profile before releasing. Then:
+Set your own team in Xcode; never commit team credentials or notarization secrets. Then:
 
 ```sh
 xcodebuild archive \
@@ -35,7 +35,7 @@ codesign -d --entitlements :- "build/Keyer.xcarchive/Products/Applications/Keyer
 spctl --assess --type execute --verbose=2 "build/Keyer.xcarchive/Products/Applications/Keyer.app"
 ```
 
-Verify that the signed app keeps the expected microphone access, contains the expanded iCloud container and key-value entitlements, and can write and reopen a Keyer document in iCloud Drive before testing settings and Keychain propagation with two Macs signed into the same Apple Account.
+Verify that the signed app keeps the expected microphone access and can write and reopen a local Keyer history document before testing settings and Keychain storage.
 
 ## Notarization
 
