@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import WaveCore
 
@@ -37,6 +38,11 @@ import Testing
 @Test func normalizationPreservesLanguageAndMeaning() {
     let input = "  ¿Mándale  el pull request  a James ?\nNo quiero 15 ; quiero 50 .  "
     #expect(TextNormalizer.normalize(input) == "¿Mándale el pull request a James?\nNo quiero 15; quiero 50.")
+}
+
+@Test func normalizationPreservesNumericSeparators() {
+    #expect(TextNormalizer.normalize("Budget: 42,500 euros at 10:30. Latency: 2.5 ms.")
+        == "Budget: 42,500 euros at 10:30. Latency: 2.5 ms.")
 }
 
 @Test func spokenCleanupDetectionFindsCorrectionsAndRepetition() {
@@ -90,6 +96,13 @@ import Testing
     let payloadSize = wav[40..<44].withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
     #expect(UInt32(littleEndian: sampleRate) == 16_000)
     #expect(UInt32(littleEndian: payloadSize) == 320)
+}
+
+@Test func wavHeaderCanFinalizeAStreamedPCMFile() throws {
+    let header = try WAVEncoder.header(pcmByteCount: 64_000, sampleRate: 16_000)
+    #expect(header.count == 44)
+    #expect(Array(header[0..<4]) == Array("RIFF".utf8))
+    #expect(header.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 40, as: UInt32.self) }.littleEndian == 64_000)
 }
 
 @Test func pcmWAVRoundTripsIntoNormalizedSamples() throws {
@@ -146,6 +159,8 @@ import Testing
     let restored = try JSONDecoder().decode(HoldShortcut.self, from: JSONEncoder().encode(shortcut))
     #expect(restored == shortcut)
     #expect(HoldShortcut.functionKey.displayTokens == ["fn"])
+    #expect(HoldShortcut.functionKey.lockDisplayTokens == ["⌘", "fn"])
+    #expect(restored.lockDisplayTokens == ["⌥", "⇧", "⌘", "Space"])
 }
 
 @Test func rapidTapCancellationStress() throws {
@@ -295,6 +310,24 @@ import Testing
     #expect((try? FileManager.default.contentsOfDirectory(atPath: pending.path).isEmpty) == true)
 }
 
+@Test func transcriptArchiveCreatesKindSpecificHistoryFolders() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("keyer-history-folders-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let service = TranscriptArchiveService(
+        localQueueURL: root.appendingPathComponent("queue", isDirectory: true),
+        cloudDocumentsURLProvider: { root.appendingPathComponent("cloud", isDirectory: true) }
+    )
+
+    let meetings = try #require(await service.documentsURL(for: .meeting))
+    let dictations = try #require(await service.documentsURL(for: .dictation))
+
+    #expect(meetings.lastPathComponent == "Meetings")
+    #expect(dictations.lastPathComponent == "Dictations")
+    #expect(FileManager.default.fileExists(atPath: meetings.path))
+    #expect(FileManager.default.fileExists(atPath: dictations.path))
+}
+
 @Test func transcriptArchiveAvoidsTimestampFilenameCollisionsWithoutIDs() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("keyer-archive-collision-test-\(UUID().uuidString)", isDirectory: true)
@@ -345,4 +378,369 @@ import Testing
 
     #expect(try await service.stage(record) == .pending(1))
     #expect(await service.synchronize() == .iCloudUnavailable(1))
+}
+
+@Test func meetingSummaryUsesOneStringAndActionArray() throws {
+    let value = MeetingSummary(
+        title: "Release review",
+        summary: "We reviewed the release.\n\nThe team approved Friday's launch.",
+        actions: ["James will publish the build", "Ana will update the notes"]
+    )
+    let restored = try JSONDecoder().decode(
+        MeetingSummary.self,
+        from: JSONEncoder().encode(value)
+    )
+    #expect(restored == value)
+}
+
+@Test func meetingLedgerParserPreservesMultilingualFactsAndTypedActions() throws {
+    let parsed = try #require(MeetingLedgerParser.parse("""
+    **Title: Revisión de lanzamiento**
+
+    **Facts:**
+    - Elena confirmó el lanzamiento para el 14 de octubre.
+    - James said transcription stays local on the Mac.
+    - Los documentos Markdown se sincronizan por iCloud.
+
+    **Actions:**
+    - Ana | Preparar las notas de versión | 12 de octubre
+    - James | Publish the signed build |
+    END
+    """))
+
+    #expect(parsed.title == "Revisión de lanzamiento")
+    #expect(parsed.summary.contains("14 de octubre"))
+    #expect(parsed.summary.contains("transcription stays local"))
+    #expect(parsed.actions == [
+        "Ana: Preparar las notas de versión (12 de octubre)",
+        "James: Publish the signed build",
+    ])
+}
+
+@Test func meetingLedgerParserRejectsMalformedAndPlaceholderActionsGenerically() throws {
+    let parsed = try #require(MeetingLedgerParser.parse("""
+    Title: Arbitrary planning review
+    Facts:
+    - Priya approved 913 widgets for the northern site.
+    Actions:
+    - Priya | Order 913 widgets | Tuesday
+    - Kai | Publish the notes | No deadline
+    - Morgan | N/A | N/A
+    - Missing separators
+    - | Empty owner | Friday
+    END
+    """))
+
+    #expect(parsed.summary == "Priya approved 913 widgets for the northern site.")
+    #expect(parsed.actions == [
+        "Priya: Order 913 widgets (Tuesday)",
+        "Kai: Publish the notes",
+    ])
+}
+
+@Test func meetingLedgerParserRequiresTitleAndFacts() {
+    #expect(MeetingLedgerParser.parse("Actions:\n- Ana | Publish | Friday") == nil)
+    #expect(MeetingLedgerParser.parse("Title: Empty\nActions:\n- Ana | Publish | Friday") == nil)
+}
+
+@Test func meetingLedgerGroundingRejectsInferredTaskWordingWithoutLanguageRules() {
+    let transcript = """
+    Elena: We agreed Keyer launches on October 14.
+    Ana: Voy a preparar las notas de versión antes del viernes.
+    James: I will publish the signed build tomorrow.
+    """
+    #expect(MeetingLedgerParser.groundedActions([
+        "Elena: Confirm Keyer launch date (October 14)",
+        "Ana: preparar las notas de versión (viernes)",
+        "James: publish the signed build (tomorrow)",
+    ], transcript: transcript) == [
+        "Ana: preparar las notas de versión (viernes)",
+        "James: publish the signed build (tomorrow)",
+    ])
+}
+
+@Test func meetingDocumentRendersActionsBelowSummaryAndBeforeTranscript() {
+    let document = MeetingDocument(
+        intelligence: MeetingSummary(
+            title: "Release review",
+            summary: "We approved the release.",
+            actions: ["James will publish the build", "Ana will update the notes"]
+        ),
+        transcript: "James: I will publish it."
+    )
+    #expect(document.markdown == """
+    # Release review
+
+    ## Summary
+
+    We approved the release.
+
+    - James will publish the build
+    - Ana will update the notes
+
+    ## Transcript
+
+    James: I will publish it.
+    """)
+}
+
+@Test func textChunkerHonorsBoundsAndPreservesContentOrder() {
+    let input = "First sentence with context. Second sentence with more context.\n\nThird paragraph."
+    let chunks = TextChunker.chunks(of: input, maximumCharacters: 36)
+    #expect(chunks.count == 3)
+    #expect(chunks.allSatisfy { $0.count <= 36 })
+    #expect(chunks.joined(separator: " ").contains("First sentence with context."))
+    #expect(chunks.joined(separator: " ").contains("Third paragraph."))
+}
+
+@Test func cleanupPipelineFallsBackAndReportsTheProvider() async throws {
+    let unavailable = MockCleanupProvider(
+        identifier: "unavailable",
+        availability: .unavailable("not ready"),
+        output: "unused"
+    )
+    let fallback = MockCleanupProvider(
+        identifier: "fallback",
+        availability: .available,
+        output: "Ship Keyer Friday"
+    )
+    let pipeline = TextCleanupPipeline(providers: [unavailable, fallback])
+    let result = try await pipeline.process(TextCleanupRequest(text: "Um, ship Keyer Friday"))
+    #expect(result.text == "Ship Keyer Friday")
+    #expect(result.provider.identifier == "fallback")
+}
+
+@Test func cleanupPipelineUnloadsAProviderWhenCancelled() async {
+    let events = PipelineEventLog()
+    let pipeline = TextCleanupPipeline(providers: [CancellingCleanupProvider(events: events)])
+    var wasCancelled = false
+    do {
+        _ = try await pipeline.process(TextCleanupRequest(text: "Cancel this"))
+    } catch is CancellationError {
+        wasCancelled = true
+    } catch {}
+    #expect(wasCancelled)
+    #expect(await events.values() == ["cleanup-unload"])
+}
+
+@Test func meetingPipelineNormalizesGeneratedActions() async throws {
+    let provider = MockMeetingSummaryProvider(
+        summary: MeetingSummary(
+            title: "  Launch review  ",
+            summary: "  The launch is approved.  ",
+            actions: ["- Publish the build", " • Update the notes ", ""]
+        )
+    )
+    let pipeline = MeetingSummaryPipeline(providers: [provider])
+    let result = try await pipeline.process(MeetingSummaryRequest(
+        transcript: "The launch is approved",
+        languages: ["en"],
+        durationSeconds: 60
+    ))
+    #expect(result.value.title == "Launch review")
+    #expect(result.value.summary == "The launch is approved.")
+    #expect(result.value.actions == ["Publish the build", "Update the notes"])
+}
+
+@Test func meetingProcessingRunsModelsSequentiallyEndToEnd() async throws {
+    let events = PipelineEventLog()
+    let stages = OSAllocatedUnfairLock(initialState: [MeetingProcessingStage]())
+    let transcription = SpeechTranscription(
+        text: "We approved Friday. James will publish the build.",
+        languages: ["en"],
+        timing: SpeechTranscriptionTiming(
+            audioDecodingMilliseconds: 1,
+            modelPreparationMilliseconds: 2,
+            inferenceMilliseconds: 3,
+            audioSegmentCount: 1
+        )
+    )
+    let transcriber = MockSpeechTranscriptionProvider(transcription: transcription, events: events)
+    let summarizerProvider = MockMeetingSummaryProvider(
+        summary: MeetingSummary(
+            title: "Friday launch",
+            summary: "The release was approved for Friday.",
+            actions: ["James will publish the build"]
+        ),
+        events: events
+    )
+    let pipeline = MeetingProcessingPipeline(
+        transcriber: transcriber,
+        summarizer: MeetingSummaryPipeline(providers: [summarizerProvider])
+    )
+    let result = try await pipeline.process(
+        fileURL: URL(fileURLWithPath: "/tmp/keyer-meeting-fixture.wav"),
+        durationSeconds: 60,
+        onStage: { stage in stages.withLock { $0.append(stage) } }
+    )
+
+    #expect(result.document.markdown.contains("# Friday launch"))
+    #expect(result.document.markdown.contains("- James will publish the build"))
+    #expect(result.document.markdown.hasSuffix(transcription.text))
+    #expect(stages.withLock { $0 } == [.transcribing, .summarizing])
+    #expect(await events.values() == [
+        "speech-transcribe",
+        "speech-unload",
+        "summary-prepare",
+        "summary-generate",
+        "summary-unload",
+    ])
+
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("keyer-meeting-pipeline-test-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let cloud = root.appendingPathComponent("Cloud", isDirectory: true)
+    let archive = TranscriptArchiveService(
+        localQueueURL: root.appendingPathComponent("Pending", isDirectory: true),
+        cloudDocumentsURLProvider: { cloud }
+    )
+    let record = result.archiveRecord(id: UUID())
+    #expect(try await archive.stage(record) == .pending(1))
+    #expect(await archive.synchronize() == .synced)
+    let documentURL = (record.relativeDirectoryComponents + [record.documentFilename]).reduce(cloud) {
+        $0.appendingPathComponent($1)
+    }
+    let archived = try String(contentsOf: documentURL, encoding: .utf8)
+    #expect(archived.contains("type: meeting"))
+    #expect(archived.contains("# Friday launch"))
+    #expect(archived.contains("## Transcript"))
+    #expect(archived.hasSuffix(transcription.text + "\n"))
+}
+
+@Test func meetingArchiveAlwaysSavesTheRawTranscription() {
+    let rawTranscript = "Ana: Ship the signed build Friday.\nJames: I will publish it."
+    let summary = MeetingSummary(
+        title: "Release review",
+        summary: "The team approved the release.",
+        actions: ["James will publish the build"]
+    )
+    let result = MeetingProcessingResult(
+        transcription: SpeechTranscription(
+            text: rawTranscript,
+            languages: ["en"],
+            timing: SpeechTranscriptionTiming(
+                audioDecodingMilliseconds: 1,
+                modelPreparationMilliseconds: 2,
+                inferenceMilliseconds: 3,
+                audioSegmentCount: 1
+            )
+        ),
+        transcriptionProvider: ModelProviderDescriptor(
+            identifier: "speech",
+            displayName: "Speech"
+        ),
+        intelligence: MeetingSummaryResult(
+            value: summary,
+            provider: ModelProviderDescriptor(identifier: "summary", displayName: "Summary")
+        ),
+        document: MeetingDocument(
+            intelligence: summary,
+            transcript: "This incorrect presentation transcript must never be archived"
+        ),
+        durationSeconds: 60
+    )
+
+    let archived = result.archiveRecord(id: UUID()).markdown
+    #expect(archived.contains("## Transcript\n\n\(rawTranscript)"))
+    #expect(!archived.contains("incorrect presentation transcript"))
+}
+
+private actor MockCleanupProvider: TextCleanupProvider {
+    nonisolated let descriptor: ModelProviderDescriptor
+    private let providerAvailability: ModelProviderAvailability
+    private let output: String
+
+    init(identifier: String, availability: ModelProviderAvailability, output: String) {
+        descriptor = ModelProviderDescriptor(identifier: identifier, displayName: identifier)
+        providerAvailability = availability
+        self.output = output
+    }
+
+    func availability() -> ModelProviderAvailability { providerAvailability }
+    func prepare() {}
+    func clean(_ request: TextCleanupRequest) -> String { output }
+    func unload() {}
+}
+
+private actor CancellingCleanupProvider: TextCleanupProvider {
+    nonisolated let descriptor = ModelProviderDescriptor(
+        identifier: "cancelling-cleanup",
+        displayName: "Cancelling cleanup"
+    )
+    private let events: PipelineEventLog
+
+    init(events: PipelineEventLog) {
+        self.events = events
+    }
+
+    func availability() -> ModelProviderAvailability { .available }
+    func prepare() {}
+    func clean(_ request: TextCleanupRequest) throws -> String { throw CancellationError() }
+    func unload() async { await events.append("cleanup-unload") }
+}
+
+private actor PipelineEventLog {
+    private var events: [String] = []
+
+    func append(_ event: String) { events.append(event) }
+    func values() -> [String] { events }
+}
+
+private actor MockSpeechTranscriptionProvider: SpeechTranscriptionProvider {
+    nonisolated let descriptor = ModelProviderDescriptor(
+        identifier: "mock-speech",
+        displayName: "Mock speech"
+    )
+    private let transcription: SpeechTranscription
+    private let events: PipelineEventLog
+
+    init(transcription: SpeechTranscription, events: PipelineEventLog) {
+        self.transcription = transcription
+        self.events = events
+    }
+
+    func prepare() async throws {}
+
+    func transcribe(wav: Data) async throws -> SpeechTranscription {
+        await events.append("speech-transcribe")
+        return transcription
+    }
+
+    func transcribe(fileURL: URL) async throws -> SpeechTranscription {
+        await events.append("speech-transcribe")
+        return transcription
+    }
+
+    func unload() async {
+        await events.append("speech-unload")
+    }
+}
+
+private actor MockMeetingSummaryProvider: MeetingSummaryProvider {
+    nonisolated let descriptor = ModelProviderDescriptor(
+        identifier: "mock-summary",
+        displayName: "Mock summary"
+    )
+    private let summary: MeetingSummary
+    private let events: PipelineEventLog?
+
+    init(summary: MeetingSummary, events: PipelineEventLog? = nil) {
+        self.summary = summary
+        self.events = events
+    }
+
+    func availability() -> ModelProviderAvailability { .available }
+
+    func prepare() async {
+        await events?.append("summary-prepare")
+    }
+
+    func summarize(_ request: MeetingSummaryRequest) async -> MeetingSummary {
+        await events?.append("summary-generate")
+        return summary
+    }
+
+    func unload() async {
+        await events?.append("summary-unload")
+    }
 }

@@ -4,13 +4,15 @@ import os
 import WaveCore
 
 final class HotkeyService: @unchecked Sendable {
-    enum Action: Sendable { case pressed, released, cancelled }
+    enum Action: Sendable { case pressed, released, lockToggled, meetingToggled, cancelled }
     var handler: (@Sendable (Action) -> Void)?
 
     private struct EventState: Sendable {
         var triggerIsDown = false
+        var lockChordIsDown = false
         var cancellationEnabled = false
         var escapeIsDown = false
+        var meetingChordIsDown = false
     }
 
     private var eventTap: CFMachPort?
@@ -22,9 +24,10 @@ final class HotkeyService: @unchecked Sendable {
     func updateBinding(_ shortcut: HoldShortcut) {
         binding.withLock { $0 = shortcut }
         let shouldRelease = eventState.withLock { state in
-            guard state.triggerIsDown else { return false }
+            let wasDown = state.triggerIsDown
             state.triggerIsDown = false
-            return true
+            state.lockChordIsDown = false
+            return wasDown
         }
         if shouldRelease { handler?(.released) }
     }
@@ -77,8 +80,10 @@ final class HotkeyService: @unchecked Sendable {
         eventTap = nil
         eventState.withLock {
             $0.triggerIsDown = false
+            $0.lockChordIsDown = false
             $0.cancellationEnabled = false
             $0.escapeIsDown = false
+            $0.meetingChordIsDown = false
         }
     }
 
@@ -88,6 +93,7 @@ final class HotkeyService: @unchecked Sendable {
             let shouldRelease = eventState.withLock { state in
                 let wasDown = state.triggerIsDown
                 state.triggerIsDown = false
+                state.lockChordIsDown = false
                 state.escapeIsDown = false
                 return wasDown
             }
@@ -98,6 +104,26 @@ final class HotkeyService: @unchecked Sendable {
         }
 
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        if keyCode == 46 {
+            let currentModifiers = modifiers(for: event.flags)
+            if type == .keyDown, currentModifiers == [.control, .option] {
+                let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+                let shouldToggle = eventState.withLock { state in
+                    guard !state.meetingChordIsDown, !isAutorepeat else { return false }
+                    state.meetingChordIsDown = true
+                    return true
+                }
+                if shouldToggle { handler?(.meetingToggled) }
+                return true
+            }
+            if type == .keyUp {
+                return eventState.withLock { state in
+                    let shouldSwallow = state.meetingChordIsDown
+                    state.meetingChordIsDown = false
+                    return shouldSwallow
+                }
+            }
+        }
         if keyCode == 53 {
             if type == .keyDown {
                 let isAutorepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
@@ -134,12 +160,22 @@ final class HotkeyService: @unchecked Sendable {
             }
 
             guard let isDown else { return false }
-            let changed = eventState.withLock { state in
-                guard isDown != state.triggerIsDown else { return false }
+            let currentModifiers = modifiers(for: event.flags)
+            let action = eventState.withLock { state -> Action? in
+                if state.lockChordIsDown {
+                    if !isDown { state.lockChordIsDown = false }
+                    return nil
+                }
+                if isDown, currentModifiers == shortcut.lockModifiers {
+                    state.lockChordIsDown = true
+                    state.triggerIsDown = false
+                    return .lockToggled
+                }
+                guard isDown != state.triggerIsDown else { return nil }
                 state.triggerIsDown = isDown
-                return true
+                return isDown ? .pressed : .released
             }
-            if changed { handler?(isDown ? .pressed : .released) }
+            if let action { handler?(action) }
             return false
         }
 
@@ -147,7 +183,17 @@ final class HotkeyService: @unchecked Sendable {
               keyCode == shortcut.keyCode.map(Int64.init),
               event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return false }
 
-        if type == .keyDown, modifiers(for: event.flags) == shortcut.modifiers {
+        if type == .keyDown, modifiers(for: event.flags) == shortcut.lockModifiers {
+            let shouldToggle = eventState.withLock { state in
+                guard !state.lockChordIsDown else { return false }
+                state.lockChordIsDown = true
+                state.triggerIsDown = false
+                return true
+            }
+            if shouldToggle { handler?(.lockToggled) }
+        } else if type == .keyUp, eventState.withLock({ $0.lockChordIsDown }) {
+            eventState.withLock { $0.lockChordIsDown = false }
+        } else if type == .keyDown, modifiers(for: event.flags) == shortcut.modifiers {
             let changed = eventState.withLock { state in
                 guard !state.triggerIsDown else { return false }
                 state.triggerIsDown = true

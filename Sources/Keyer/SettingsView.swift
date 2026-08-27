@@ -5,104 +5,166 @@ import WaveCore
 private enum SettingsTab: String, CaseIterable {
     case general
     case permissions
-    case transcription
+    case models
 }
 
 struct SettingsView: View {
     @ObservedObject var coordinator: DictationCoordinator
+    @ObservedObject var meetingCoordinator: MeetingCoordinator
+    @ObservedObject var providerSettings: CloudProviderSettings
     @AppStorage("selected-settings-tab") private var selectedTab = SettingsTab.general.rawValue
 
     var body: some View {
         TabView(selection: $selectedTab) {
             Tab("General", systemImage: "gearshape", value: SettingsTab.general.rawValue) {
-                GeneralSettings(coordinator: coordinator)
+                GeneralSettings(
+                    coordinator: coordinator,
+                    meetingCoordinator: meetingCoordinator
+                )
             }
 
             Tab("Permissions", systemImage: "lock.shield", value: SettingsTab.permissions.rawValue) {
                 PermissionsSettings(coordinator: coordinator)
             }
 
-            Tab("Transcription", systemImage: "waveform", value: SettingsTab.transcription.rawValue) {
-                LocalModelSettings(coordinator: coordinator)
+            Tab("Models", systemImage: "cloud", value: SettingsTab.models.rawValue) {
+                ProviderSettings(settings: providerSettings)
             }
         }
         .frame(minWidth: 620, minHeight: 560)
+        .onAppear {
+            if selectedTab == "transcription" { selectedTab = SettingsTab.models.rawValue }
+        }
     }
 }
 
-private struct LocalModelSettings: View {
-    @ObservedObject var coordinator: DictationCoordinator
-    @State private var confirmsRemoval = false
+private struct ProviderSettings: View {
+    @ObservedObject var settings: CloudProviderSettings
+    @State private var apiKey = ""
+
+    private let speechModels = [
+        ModelChoice("Qwen3 ASR 1.7B", "qwen/qwen3-asr-1.7b", "Quality candidate"),
+        ModelChoice("Qwen3 ASR 0.6B", "qwen/qwen3-asr-0.6b", "Speed candidate"),
+        ModelChoice("Nemotron 3.5 ASR 0.6B", "nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b", "Latency candidate"),
+        ModelChoice("GPT Transcribe", "openai/gpt-transcribe", "Accuracy candidate"),
+        ModelChoice("Voxtral Mini Transcribe", "mistralai/voxtral-mini-transcribe", "Meeting candidate"),
+    ]
+
+    private let textModels = [
+        ModelChoice("GPT-5.6 Luna", "openai/gpt-5.6-luna", "Fast structured output"),
+        ModelChoice("GPT-5 Nano", "openai/gpt-5-nano", "Low latency and cost"),
+        ModelChoice("Gemini 3.7 Flash", "google/gemini-3.7-flash", "Fast long context"),
+        ModelChoice("Nemotron 3.5 Lightning", "nvidia/nemotron-3.5-lightning", "Low cost candidate"),
+    ]
 
     var body: some View {
         Form {
-            Section("Speech model") {
-                LabeledContent("Model") {
-                    Text(LocalTranscriptionService.modelDisplayName)
+            Section("OpenRouter") {
+                LabeledContent("API key") {
+                    if settings.hasAPIKey {
+                        HStack(spacing: 8) {
+                            Label("Configured", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Button("Remove", role: .destructive) {
+                                Task { await settings.removeAPIKey() }
+                            }
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            SecureField("sk-or-v1-…", text: $apiKey)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 250)
+                            Button("Save") {
+                                let value = apiKey
+                                apiKey = ""
+                                Task { await settings.saveAPIKey(value) }
+                            }
+                            .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
                 }
+
+                if !settings.credentialMessage.isEmpty {
+                    Text(settings.credentialMessage)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Speech to text") {
+                Picker("Model", selection: $settings.speechModel) {
+                    ForEach(speechChoices) { choice in
+                        VStack(alignment: .leading) {
+                            Text(choice.name)
+                            Text(choice.note).foregroundStyle(.secondary)
+                        }
+                        .tag(choice.identifier)
+                    }
+                }
+                .pickerStyle(.menu)
+
                 LabeledContent("Language") {
                     Text("Automatic")
                 }
-                LabeledContent("Status") {
-                    statusLabel
-                }
 
-                switch coordinator.localModelStatus {
-                case .notDownloaded, .failed:
-                    Button("Download Model") {
-                        coordinator.downloadLocalModel()
-                    }
-                    .buttonStyle(.borderedProminent)
-                case .downloading, .preparing:
-                    ProgressView()
-                        .controlSize(.small)
-                case .downloaded, .ready:
-                    Button("Remove Downloaded Model…", role: .destructive) {
-                        confirmsRemoval = true
+                Text("Used for dictations and meeting transcripts")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Writing and summaries") {
+                Picker("Model", selection: $settings.textModel) {
+                    ForEach(textChoices) { choice in
+                        VStack(alignment: .leading) {
+                            Text(choice.name)
+                            Text(choice.note).foregroundStyle(.secondary)
+                        }
+                        .tag(choice.identifier)
                     }
                 }
+                .pickerStyle(.menu)
+
+                Text("Used for spoken-text cleanup, meeting titles, summaries, and actions")
+                    .foregroundStyle(.secondary)
             }
 
             Section {
-                Label {
-                    Text("Keyer downloads \(LocalTranscriptionService.downloadSizeLabel) on first use, then transcribes privately on this Mac. The model stays warm for fast results and uses no CPU while idle.")
-                } icon: {
-                    Image(systemName: "lock.shield")
-                }
-                .foregroundStyle(.secondary)
+                Text("Models are independent so each task can be optimized for quality, price, and latency. Your API key syncs securely through iCloud Keychain")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .confirmationDialog("Remove the speech model?", isPresented: $confirmsRemoval) {
-            Button("Remove Model", role: .destructive) {
-                coordinator.removeLocalModel()
-            }
-        } message: {
-            Text("Keyer will download it again the next time you dictate")
-        }
     }
 
-    @ViewBuilder
-    private var statusLabel: some View {
-        switch coordinator.localModelStatus {
-        case .ready:
-            Label("Ready", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        case .downloaded:
-            Label("Downloaded", systemImage: "checkmark.circle")
-                .foregroundStyle(.green)
-        case .downloading, .preparing:
-            Label(coordinator.localModelStatus.label, systemImage: "arrow.down.circle")
-                .foregroundStyle(.secondary)
-        case .notDownloaded, .failed:
-            Label(coordinator.localModelStatus.label, systemImage: "arrow.down.circle")
-                .foregroundStyle(.secondary)
+    private var speechChoices: [ModelChoice] {
+        choices(speechModels, current: settings.speechModel)
+    }
+
+    private var textChoices: [ModelChoice] {
+        choices(textModels, current: settings.textModel)
+    }
+
+    private func choices(_ choices: [ModelChoice], current: String) -> [ModelChoice] {
+        if choices.contains(where: { $0.identifier == current }) { return choices }
+        return [ModelChoice(current, current, "Custom model")] + choices
+    }
+
+    private struct ModelChoice: Identifiable {
+        let name: String
+        let identifier: String
+        let note: String
+        var id: String { identifier }
+
+        init(_ name: String, _ identifier: String, _ note: String) {
+            self.name = name
+            self.identifier = identifier
+            self.note = note
         }
     }
 }
 
 private struct GeneralSettings: View {
     @ObservedObject var coordinator: DictationCoordinator
+    @ObservedObject var meetingCoordinator: MeetingCoordinator
+    @AppStorage("show-menu-bar-icon") private var showMenuBarIcon = true
 
     var body: some View {
         Form {
@@ -111,7 +173,27 @@ private struct GeneralSettings: View {
                     get: { coordinator.launchAtLogin },
                     set: { coordinator.setLaunchAtLogin($0) }
                 ))
-                Toggle("Show Keyer in the Dock", isOn: $coordinator.showDockIcon)
+                Toggle("Show Keyer in the menu bar", isOn: Binding(
+                    get: { showMenuBarIcon },
+                    set: { isVisible in
+                        if !isVisible, !coordinator.showDockIcon {
+                            coordinator.showDockIcon = true
+                        }
+                        showMenuBarIcon = isVisible
+                    }
+                ))
+                Toggle("Show Keyer in the Dock", isOn: Binding(
+                    get: { coordinator.showDockIcon },
+                    set: { isVisible in
+                        if !isVisible, !showMenuBarIcon {
+                            showMenuBarIcon = true
+                        }
+                        coordinator.showDockIcon = isVisible
+                    }
+                ))
+
+                Text("Keyer keeps at least one app icon visible")
+                    .foregroundStyle(.secondary)
 
                 if coordinator.launchAtLoginNeedsApproval {
                     LabeledContent("Login item") {
@@ -128,10 +210,17 @@ private struct GeneralSettings: View {
             Section("Dictation") {
                 ShortcutRecorder(shortcut: $coordinator.holdShortcut)
 
+                LabeledContent("Locked dictation") {
+                    ShortcutKeycaps(tokens: coordinator.holdShortcut.lockDisplayTokens)
+                }
+
+                Text("Tap the lock shortcut to start or stop hands-free recording. Escape cancels.")
+                    .foregroundStyle(.secondary)
+
                 Picker("Microphone", selection: $coordinator.inputDeviceUID) {
                     Text("System Default").tag("")
                     ForEach(coordinator.inputDevices) { device in
-                        Text(device.isSystemDefault ? "\(device.name) — Default" : device.name)
+                        Text(device.isSystemDefault ? "\(device.name) (Default)" : device.name)
                             .tag(device.id)
                     }
                     if !coordinator.inputDeviceUID.isEmpty,
@@ -141,6 +230,13 @@ private struct GeneralSettings: View {
                     }
                 }
                 .pickerStyle(.menu)
+            }
+
+            Section("Meetings") {
+                Toggle("Show meeting controls", isOn: $meetingCoordinator.showControls)
+                Toggle("Suggest meetings", isOn: $meetingCoordinator.suggestMeetings)
+                Text("Keyer can suggest recording when a meeting app is active. Recording only starts when you choose Play.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Writing") {
@@ -168,12 +264,12 @@ private struct GeneralSettings: View {
                     .disabled(coordinator.transcriptArchiveStatus == .checking)
                 }
 
-                Text("Every completed dictation is saved as a Markdown document. If iCloud Drive is unavailable, Keyer keeps a local pending copy and syncs it later.")
+                Text("History and portable preferences sync through iCloud. The selected microphone and login item stay specific to this Mac")
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                Text("Hold the shortcut while you speak. Keyer records only while the shortcut is down.")
+                Text("Hold the shortcut for push-to-talk, or use locked dictation for longer recordings.")
                     .foregroundStyle(.secondary)
             }
         }

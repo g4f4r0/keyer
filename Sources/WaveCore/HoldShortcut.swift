@@ -44,14 +44,31 @@ public struct HoldShortcut: Codable, Equatable, Sendable {
     }
 
     public var displayTokens: [String] {
-        if kind == .functionKey { return ["fn"] }
+        Self.displayTokens(for: modifiers, keyLabel: keyLabel)
+    }
 
+    public var lockModifier: ShortcutModifiers {
+        if !modifiers.contains(.command) { return .command }
+        if !modifiers.contains(.option) { return .option }
+        if !modifiers.contains(.shift) { return .shift }
+        return .control
+    }
+
+    public var lockModifiers: ShortcutModifiers {
+        modifiers.union(lockModifier)
+    }
+
+    public var lockDisplayTokens: [String] {
+        Self.displayTokens(for: lockModifiers, keyLabel: keyLabel)
+    }
+
+    private static func displayTokens(for modifiers: ShortcutModifiers, keyLabel: String) -> [String] {
         var tokens: [String] = []
         if modifiers.contains(.control) { tokens.append("⌃") }
         if modifiers.contains(.option) { tokens.append("⌥") }
         if modifiers.contains(.shift) { tokens.append("⇧") }
         if modifiers.contains(.command) { tokens.append("⌘") }
-        if modifiers.contains(.function) { tokens.append("fn") }
+        if modifiers.contains(.function), keyLabel != "fn" { tokens.append("fn") }
         tokens.append(keyLabel)
         return tokens
     }

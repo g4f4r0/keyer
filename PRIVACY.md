@@ -1,25 +1,9 @@
-# Keyer Privacy Policy
+# Privacy
 
-Last updated: August 22, 2026
+Keyer records microphone audio only while dictation or meeting recording is active. Audio is sent to OpenRouter and the upstream provider selected for the configured model so it can be transcribed. If spoken-text cleanup or meeting summaries are enabled, the relevant transcript is also sent for text generation.
 
-Keyer transcribes speech locally. On first use, it downloads an approximately 461 MB Core ML speech model from FluidInference’s repository on Hugging Face. Recording audio is not sent with that download and is never sent to a speech or AI provider.
+The OpenRouter API key is stored as a synchronizable password in Keychain and can sync between the user's devices through iCloud Keychain. It is never stored in app preferences or iCloud Drive. Portable preferences use iCloud key-value storage. Hardware-specific preferences, including the selected microphone and login item, remain local to each Mac.
 
-Keyer itself:
+Completed dictations and meetings are saved as Markdown in the user's iCloud Drive. If iCloud is unavailable, Keyer keeps a local pending copy until synchronization succeeds. Dictation audio is not archived. Meeting audio is retained temporarily only while processing can be retried, then removed after success or discard.
 
-- captures audio only while dictation is active
-- keeps short recordings in memory; long recordings may use a private temporary WAV that is deleted immediately after transcription
-- never archives recording audio
-- stores the downloaded model under Keyer’s Application Support directory and provides a Settings action to remove it
-- saves each successful original and cleaned transcript to the user’s private iCloud Drive as a human-readable Markdown document with YAML front matter
-- stages transcripts in a private local pending queue and retries automatically when iCloud Drive is unavailable
-- captures only the original editable destination needed for guarded paste; it does not capture screen, window, document, or nearby-text context
-- performs optional spoken-text cleanup locally
-- always writes the result to the clipboard, but does not maintain clipboard history
-- has no OpenRouter, hosted speech, analytics, telemetry, advertising, or crash-reporting integration
-- does not log audio, transcript text, clipboard contents, or model output
-
-Optional local diagnostics contain timings, model ID, audio duration and size, buffer counts, insertion strategy, error category, and iCloud archive state. Transcript text is printed only by an explicit developer diagnostic flag.
-
-After the model download, dictation and cleanup work offline. iCloud transcript history follows the user’s Apple Account, iCloud Drive availability, and settings.
-
-Removing Keyer removes its app-owned model and local support data when the normal uninstall cleanup is performed, but does not automatically delete user documents in iCloud Drive. Users control those documents through iCloud Drive.
+OpenRouter and upstream provider handling, retention, and billing are governed by their policies and the user's routing choices.

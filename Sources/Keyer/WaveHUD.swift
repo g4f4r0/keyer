@@ -4,11 +4,18 @@ import WaveCore
 
 @MainActor
 final class WaveHUDModel: ObservableObject {
+    enum MessageTone: Equatable, Sendable {
+        case warning
+        case error
+    }
+
     @Published var state: WaveState = .ready
     @Published var level: Float = 0
     @Published var message: String?
+    @Published var messageTone: MessageTone = .error
     @Published var approachingLimit = false
     @Published var isVisible = false
+    @Published var recordingExpanded = true
 }
 
 struct WaveHUDView: View {
@@ -20,11 +27,11 @@ struct WaveHUDView: View {
 
     @ObservedObject var model: WaveHUDModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         ZStack {
             recordingContent
+                .scaleEffect(x: model.recordingExpanded ? 1 : 0.35, y: 1)
                 .opacity(presentation == .recording ? 1 : 0)
                 .animation(contentAnimation(for: .recording), value: presentation)
 
@@ -36,71 +43,49 @@ struct WaveHUDView: View {
                 .opacity(presentation == .message ? 1 : 0)
                 .animation(contentAnimation(for: .message), value: presentation)
         }
-        .frame(width: targetWidth, height: 32)
+        .frame(width: targetWidth, height: 30)
         .foregroundStyle(.white)
         .background {
-            Capsule()
-                .fill(.black.opacity(reduceTransparency ? 0.88 : 0.48))
-                .glassEffect(reduceTransparency ? .identity : .regular, in: .capsule)
-                .shadow(color: .black.opacity(reduceTransparency ? 0.16 : 0.22), radius: 7, y: 3)
-        }
-        .overlay {
-            Capsule()
-                .strokeBorder(
-                    model.approachingLimit && presentation == .recording
-                        ? Color.orange.opacity(reduceTransparency ? 0.9 : 0.72)
-                        : .clear,
-                    lineWidth: 1
-                )
-                .padding(1)
-                .blur(radius: reduceTransparency ? 0 : 0.45)
-        }
-        .background {
-            Capsule()
-                .fill(
-                    model.approachingLimit && presentation == .recording
-                        ? Color.orange.opacity(reduceTransparency ? 0.08 : 0.12)
-                        : .clear
-                )
-                .padding(1)
+            KeyerPillBackground(castsShadow: true)
         }
         .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: model.approachingLimit)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: model.messageTone)
         .animation(widthAnimation, value: targetWidth)
+        .animation(widthAnimation, value: model.recordingExpanded)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .frame(width: 420, height: 56)
     }
 
     private var recordingContent: some View {
-        HStack(alignment: .center, spacing: 2.5) {
-            ForEach(0..<13, id: \.self) { index in
-                Capsule()
-                    .frame(width: 2, height: barHeight(index))
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: model.level)
+        HStack(alignment: .center, spacing: 6) {
+            if model.approachingLimit {
+                KeyerStatusDot(tone: .warning)
             }
+
+            HStack(alignment: .center, spacing: 2.5) {
+                ForEach(0..<13, id: \.self) { index in
+                    Capsule()
+                        .frame(width: 2, height: barHeight(index))
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: model.level)
+                }
+            }
+            .frame(width: 80, height: 18)
         }
-        .frame(width: 80, height: 18)
+        .frame(height: 18)
     }
 
     private var processingContent: some View {
-        TimelineView(.animation(
-            minimumInterval: 1 / 30,
-            paused: reduceMotion || !model.isVisible || presentation != .processing
-        )) { context in
-            RemixIcon(name: .loader, fallbackSystemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                .frame(width: 14, height: 14)
-                .rotationEffect(.degrees(rotation(at: context.date)))
-        }
-        .frame(width: 32, height: 32)
+        RemixSpinner(
+            size: 14,
+            isActive: model.isVisible && presentation == .processing
+        )
+        .frame(width: 30, height: 30)
     }
 
     private var messageContent: some View {
-        HStack(spacing: 6) {
-            RemixIcon(
-                name: isNoSpeechMessage ? .microphoneOff : .warning,
-                fallbackSystemName: isNoSpeechMessage ? "mic.slash" : "exclamationmark.circle"
-            )
-            .frame(width: 13, height: 13)
+        HStack(spacing: 7) {
+            KeyerStatusDot(tone: model.messageTone == .warning ? .warning : .error)
 
             Text(message)
                 .font(messageFont)
@@ -112,8 +97,12 @@ struct WaveHUDView: View {
 
     private var presentation: Presentation {
         if model.message != nil { return .message }
-        if case .recording = model.state { return .recording }
-        return .processing
+        switch model.state {
+        case .finalizingAudio, .preparingTranscription, .transcribing, .inserting, .recovering:
+            return .processing
+        default:
+            return .recording
+        }
     }
 
     private var message: String {
@@ -122,10 +111,11 @@ struct WaveHUDView: View {
 
     private var targetWidth: CGFloat {
         switch presentation {
-        case .recording: 80
-        case .processing: 32
+        case .recording:
+            model.recordingExpanded ? (model.approachingLimit ? 91 : 80) : 30
+        case .processing: 30
         case .message:
-            min(max(ceil(messageTextWidth) + 13 + 6 + 20, 88), 390)
+            min(max(ceil(messageTextWidth) + 6 + 7 + 20, 88), 390)
         }
     }
 
@@ -136,10 +126,6 @@ struct WaveHUDView: View {
 
     private var messageFont: Font {
         .system(size: 12, weight: .medium)
-    }
-
-    private var isNoSpeechMessage: Bool {
-        message.localizedCaseInsensitiveContains("no speech")
     }
 
     private var accessibilityLabel: String {
@@ -160,11 +146,6 @@ struct WaveHUDView: View {
         return .easeOut(duration: 0.1).delay(delay)
     }
 
-    private func rotation(at date: Date) -> Double {
-        guard !reduceMotion else { return 0 }
-        return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9 * 360
-    }
-
     private func barHeight(_ index: Int) -> CGFloat {
         let weights: [Float] = [0.38, 0.54, 0.72, 0.9, 0.62, 0.82, 1, 0.76, 0.92, 0.66, 0.8, 0.56, 0.4]
         let level = min(max(model.level, 0.03), 1)
@@ -175,7 +156,7 @@ struct WaveHUDView: View {
 @MainActor
 final class WaveHUDPanel {
     private static let panelSize = NSSize(width: 420, height: 56)
-    private static let hudHeight: CGFloat = 32
+    private static let hudHeight: CGFloat = 30
     private static let hiddenDockBottomGap: CGFloat = 32
     private static let visibleDockGap: CGFloat = 16
     private let panel: NSPanel
@@ -214,8 +195,19 @@ final class WaveHUDPanel {
         panel.orderFrontRegardless()
     }
 
+    func showRecording() {
+        model.recordingExpanded = false
+        show()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(16))
+            guard let self, self.model.isVisible else { return }
+            self.model.recordingExpanded = true
+        }
+    }
+
     func hide() {
         model.isVisible = false
+        model.recordingExpanded = true
         panel.orderOut(nil)
     }
 }

@@ -14,7 +14,7 @@
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
-    <key>NSMicrophoneUsageDescription</key><string>Keyer records microphone audio only while you hold the dictation shortcut and transcribes it locally on this Mac.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Keyer records microphone audio only while you hold the dictation shortcut and sends it to your configured speech provider for transcription.</string>
     <key>NSUbiquitousContainers</key>
     <dict>
         <key>iCloud.com.keyer.app</key>

@@ -6,19 +6,92 @@ import WaveCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let coordinator = DictationCoordinator()
+    let providerSettings: CloudProviderSettings
+    let coordinator: DictationCoordinator
+    let meetingCoordinator: MeetingCoordinator
+    private let openRouterClient: OpenRouterClient
+    private let speechProvider: OpenRouterSpeechTranscriptionProvider
+    private let languageProvider: OpenRouterLanguageModelProvider
     private var diagnosticAudio: AudioCaptureService?
+    private var diagnosticMeetingAudio: MeetingAudioCaptureService?
     private var diagnosticHotkey: HotkeyService?
     private var diagnosticHUDModel: WaveHUDModel?
     private var diagnosticHUD: WaveHUDPanel?
     private var diagnosticSettingsWindow: NSWindow?
     private let diagnosticPeak = OSAllocatedUnfairLock(initialState: Float.zero)
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        if ProcessInfo.processInfo.arguments.contains("--diagnose-model-cancellation") {
-            runModelCancellationDiagnostic()
-            return
+    override init() {
+        let settingsSync = PortableSettingsSync.shared
+        settingsSync.bootstrap()
+        let providerSettings = CloudProviderSettings()
+        let client = OpenRouterClient(configuration: providerSettings.configuration)
+        let speech = OpenRouterSpeechTranscriptionProvider(
+            client: client,
+            configuration: providerSettings.configuration
+        )
+        let language = OpenRouterLanguageModelProvider(
+            client: client,
+            configuration: providerSettings.configuration
+        )
+        self.providerSettings = providerSettings
+        openRouterClient = client
+        speechProvider = speech
+        languageProvider = language
+        coordinator = DictationCoordinator(
+            speechTranscriber: speech,
+            textCleanup: TextCleanupPipeline(providers: [language])
+        )
+        meetingCoordinator = MeetingCoordinator(
+            transcriber: speech,
+            summarizer: language
+        )
+        super.init()
+        settingsSync.onExternalChange = { [weak self] keys in
+            guard let self else { return }
+            let coordinator = self.coordinator
+            let meetingCoordinator = self.meetingCoordinator
+            let providerSettings = self.providerSettings
+            let defaults = UserDefaults.standard
+            if keys.contains("clean-up-spoken-text"),
+               let value = defaults.object(forKey: "clean-up-spoken-text") as? Bool,
+               coordinator.cleanUpSpokenText != value {
+                coordinator.cleanUpSpokenText = value
+            }
+            if keys.contains("show-dock-icon"),
+               let value = defaults.object(forKey: "show-dock-icon") as? Bool,
+               coordinator.showDockIcon != value {
+                coordinator.showDockIcon = value
+            }
+            if keys.contains("hold-shortcut"),
+               let data = defaults.data(forKey: "hold-shortcut"),
+               let value = try? JSONDecoder().decode(HoldShortcut.self, from: data),
+               coordinator.holdShortcut != value {
+                coordinator.holdShortcut = value
+            }
+            if keys.contains("show-meeting-controls"),
+               let value = defaults.object(forKey: "show-meeting-controls") as? Bool,
+               meetingCoordinator.showControls != value {
+                meetingCoordinator.showControls = value
+            }
+            if keys.contains("suggest-meetings"),
+               let value = defaults.object(forKey: "suggest-meetings") as? Bool,
+               meetingCoordinator.suggestMeetings != value {
+                meetingCoordinator.suggestMeetings = value
+            }
+            if keys.contains("openrouter-speech-model"),
+               let value = defaults.string(forKey: "openrouter-speech-model"),
+               providerSettings.speechModel != value {
+                providerSettings.speechModel = value
+            }
+            if keys.contains("openrouter-text-model"),
+               let value = defaults.string(forKey: "openrouter-text-model"),
+               providerSettings.textModel != value {
+                providerSettings.textModel = value
+            }
         }
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
         if ProcessInfo.processInfo.arguments.contains("--diagnose-settings") {
             runSettingsDiagnostic()
             return
@@ -33,14 +106,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             runHistoryDiagnostic()
             return
         }
-        if let argument = ProcessInfo.processInfo.arguments.first(where: {
-            $0.hasPrefix("--diagnose-transcription=")
-        }) {
-            runTranscriptionDiagnostic(String(argument.dropFirst("--diagnose-transcription=".count)))
-            return
-        }
         if ProcessInfo.processInfo.arguments.contains("--diagnose-recording-escape") {
             runRecordingEscapeDiagnostic()
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--diagnose-recording-lock") {
+            runRecordingLockDiagnostic()
             return
         }
         if ProcessInfo.processInfo.arguments.contains("--diagnose-escape") {
@@ -63,7 +134,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             runAudioDiagnostic()
             return
         }
+        if ProcessInfo.processInfo.arguments.contains("--diagnose-meeting-audio") {
+            runMeetingAudioDiagnostic()
+            return
+        }
+        if let argument = ProcessInfo.processInfo.arguments.first(where: {
+            $0.hasPrefix("--diagnose-meeting-controls=")
+        }) {
+            meetingCoordinator.start()
+            meetingCoordinator.showDiagnosticControls(
+                String(argument.dropFirst("--diagnose-meeting-controls=".count))
+            )
+            return
+        }
+        coordinator.canBeginDictation = { [weak meetingCoordinator] in
+            meetingCoordinator?.state.isCapturing != true && meetingCoordinator?.state.isProcessing != true
+        }
+        coordinator.providerReady = { [weak providerSettings] in
+            providerSettings?.hasAPIKey == true
+        }
+        coordinator.meetingToggleHandler = { [weak meetingCoordinator] in
+            meetingCoordinator?.toggleMeeting()
+        }
+        meetingCoordinator.canStart = { [weak coordinator] in
+            coordinator?.state.hasActiveSession != true
+        }
+        meetingCoordinator.providerReady = { [weak providerSettings] in
+            providerSettings?.hasAPIKey == true
+        }
+        meetingCoordinator.inputDeviceUID = { [weak coordinator] in
+            coordinator?.inputDeviceUID ?? ""
+        }
+        meetingCoordinator.beforeProcessing = { [weak coordinator] in
+            await coordinator?.prepareForMeetingProcessing()
+        }
         coordinator.start()
+        meetingCoordinator.start()
         if ProcessInfo.processInfo.arguments.contains("--diagnose-hotkey") {
             let fields = [
                 "microphone=\(coordinator.microphoneGranted)",
@@ -82,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        meetingCoordinator.stop()
         coordinator.stop()
     }
 
@@ -89,29 +196,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.refreshInputDevices()
         coordinator.refreshReadiness()
         coordinator.refreshLaunchAtLoginStatus()
-    }
-
-    private func runModelCancellationDiagnostic() {
-        Task {
-            let service = LocalTranscriptionService { _ in }
-            let preparation = Task { try await service.prepare() }
-            try? await Task.sleep(for: .milliseconds(100))
-            let unloadStart = ContinuousClock.now
-            await service.unload()
-            let unloadMS = elapsedMilliseconds(since: unloadStart)
-            let preparationOutcome: String
-            switch await preparation.result {
-            case .success:
-                preparationOutcome = "success"
-            case let .failure(error):
-                preparationOutcome = error is CancellationError
-                    ? "cancelled"
-                    : "failed_\(String(describing: type(of: error)))"
-            }
-            let status = await service.currentStatus()
-            writeDiagnostic("model_cancellation=true preparation_outcome=\(preparationOutcome) status=\(status.label.replacingOccurrences(of: " ", with: "_")) ready=\(status == .ready) unload_ms=\(unloadMS)\n")
-            NSApp.terminate(nil)
-        }
     }
 
     private func runHistoryDiagnostic() {
@@ -125,7 +209,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func runSettingsDiagnostic() {
         coordinator.start()
-        let controller = NSHostingController(rootView: SettingsView(coordinator: coordinator))
+        let controller = NSHostingController(rootView: SettingsView(
+            coordinator: coordinator,
+            meetingCoordinator: meetingCoordinator,
+            providerSettings: providerSettings
+        ))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 620, height: 560),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -223,56 +311,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func runTranscriptionDiagnostic(_ path: String) {
+    private func runMeetingAudioDiagnostic() {
+        let audio = MeetingAudioCaptureService()
+        audio.selectInputDevice(uid: coordinator.inputDeviceUID)
+        diagnosticMeetingAudio = audio
+        do {
+            try audio.prepare()
+            try audio.start()
+        } catch {
+            writeDiagnostic("meeting_audio=false start_error=\(error)\n")
+            NSApp.terminate(nil)
+            return
+        }
+
         Task {
+            try? await Task.sleep(for: .seconds(1))
+            audio.pause()
+            try? await Task.sleep(for: .milliseconds(500))
+            audio.resume()
+            try? await Task.sleep(for: .seconds(1))
             do {
-                let fileURL = URL(fileURLWithPath: path)
-                let payloadBytes = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                let useGPU = ProcessInfo.processInfo.arguments.contains("--diagnose-encoder-gpu")
-                let parallel = ProcessInfo.processInfo.arguments.first(where: {
-                    $0.hasPrefix("--diagnose-parallel=")
-                }).flatMap { Int($0.dropFirst("--diagnose-parallel=".count)) } ?? 4
-                let dualDecode = ProcessInfo.processInfo.arguments.contains("--diagnose-dual-decode")
-                let seamGapRepair = !ProcessInfo.processInfo.arguments.contains("--diagnose-no-seam-repair")
-                let useDataPath = ProcessInfo.processInfo.arguments.contains("--diagnose-transcription-data")
-                let service = LocalTranscriptionService(
-                    statusReporter: { [weak self] status in
-                        if case let .downloading(progress) = status {
-                            Task { @MainActor in
-                                self?.writeDiagnostic("model_download_progress=\(progress)\n")
-                            }
-                        }
-                    },
-                    encoderComputeUnits: useGPU ? .cpuAndGPU : .cpuAndNeuralEngine,
-                    parallelChunkConcurrency: parallel,
-                    dualDecodeArbitration: dualDecode,
-                    seamGapRepair: seamGapRepair
+                let capture = try audio.stop()
+                let fileSize = (try? capture.fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                let validHeader = (try? Data(contentsOf: capture.fileURL, options: .mappedIfSafe))
+                    .map { $0.count >= 44 && String(decoding: $0.prefix(4), as: UTF8.self) == "RIFF" }
+                    ?? false
+                writeDiagnostic(
+                    "meeting_audio=true duration=\(capture.durationSeconds) bytes=\(fileSize) "
+                    + "dropped=\(capture.droppedBuffers) peak_buffer_bytes=\(capture.peakBufferBytes) "
+                    + "valid_header=\(validHeader) pause_excluded=\(capture.durationSeconds < 2.35)\n"
                 )
-                let warmupStart = ContinuousClock.now
-                try await service.prepare()
-                let warmupMS = elapsedMilliseconds(since: warmupStart)
-                let expected = ProcessInfo.processInfo.arguments.first(where: {
-                    $0.hasPrefix("--diagnose-transcription-expected=")
-                }).map { String($0.dropFirst("--diagnose-transcription-expected=".count)) }
-                let runs = ProcessInfo.processInfo.arguments.first(where: {
-                    $0.hasPrefix("--diagnose-transcription-runs=")
-                }).flatMap { Int($0.dropFirst("--diagnose-transcription-runs=".count)) }
-                    .map { max(1, min($0, 100)) } ?? 1
-                for run in 1...runs {
-                    let result = if useDataPath {
-                        try await service.transcribe(wav: Data(contentsOf: fileURL))
-                    } else {
-                        try await service.transcribe(fileURL: fileURL)
-                    }
-                    let accuracy = expected.map { wordAccuracy(reference: $0, candidate: result.text) }
-                    let wordCount = result.text.split(whereSeparator: { $0.isWhitespace }).count
-                    writeDiagnostic("transcription=true run=\(run) model=\(LocalTranscriptionService.modelIdentifier) encoder=\(useGPU ? "gpu" : "ane") parallel=\(parallel) dual_decode=\(dualDecode) seam_repair=\(seamGapRepair) input=\(useDataPath ? "data" : "file") languages=\(result.languages.joined(separator: ",")) audio_segments=\(result.timing.audioSegmentCount) warmup_ms=\(run == 1 ? warmupMS : 0) inference_ms=\(result.timing.inferenceMilliseconds) audio_decode_ms=\(result.timing.audioDecodingMilliseconds) payload_bytes=\(payloadBytes) text_characters=\(result.text.count) words=\(wordCount) text_nonempty=\(!result.text.isEmpty) word_accuracy=\(accuracy ?? -1)\n")
-                    if ProcessInfo.processInfo.arguments.contains("--diagnose-transcription-print-text") {
-                        writeDiagnostic("transcript=\(result.text.replacingOccurrences(of: "\n", with: " "))\n")
-                    }
-                }
+                try? FileManager.default.removeItem(at: capture.fileURL)
             } catch {
-                writeDiagnostic("transcription=false error=\(error)\n")
+                writeDiagnostic("meeting_audio=false stop_error=\(error)\n")
             }
             NSApp.terminate(nil)
         }
@@ -323,8 +394,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             coordinator.toggleDictation()
             try? await Task.sleep(for: .milliseconds(500))
-            guard coordinator.state.isRecording else {
-                writeDiagnostic("recording_escape=false recording_started=false state=\(coordinator.state)\n")
+            guard coordinator.state.isRecording, coordinator.dictationLocked else {
+                writeDiagnostic("recording_escape=false recording_started=false locked=\(coordinator.dictationLocked) state=\(coordinator.state)\n")
                 NSApp.terminate(nil)
                 return
             }
@@ -342,6 +413,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func runRecordingLockDiagnostic() {
+        coordinator.start()
+        Task {
+            for _ in 0..<30 where coordinator.state != .ready {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard coordinator.state == .ready else {
+                writeDiagnostic("recording_lock=false readiness=\(coordinator.state)\n")
+                NSApp.terminate(nil)
+                return
+            }
+            guard postLockShortcut() else {
+                writeDiagnostic("recording_lock=false event_creation=false\n")
+                NSApp.terminate(nil)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            let started = coordinator.state.isRecording && coordinator.dictationLocked
+            guard postLockShortcut() else {
+                writeDiagnostic("recording_lock=false second_event_creation=false\n")
+                NSApp.terminate(nil)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            let stopped = !coordinator.state.isRecording && !coordinator.dictationLocked
+            writeDiagnostic("recording_lock=\(started && stopped) started=\(started) stopped=\(stopped) state=\(coordinator.state)\n")
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func postLockShortcut() -> Bool {
+        let shortcut = coordinator.holdShortcut
+        guard let keyCode = shortcut.kind == .functionKey ? UInt16(63) : shortcut.keyCode,
+              let down = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(keyCode), keyDown: false) else {
+            return false
+        }
+        var flags: CGEventFlags = []
+        if shortcut.lockModifiers.contains(.control) { flags.insert(.maskControl) }
+        if shortcut.lockModifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if shortcut.lockModifiers.contains(.shift) { flags.insert(.maskShift) }
+        if shortcut.lockModifiers.contains(.command) { flags.insert(.maskCommand) }
+        if shortcut.lockModifiers.contains(.function) { flags.insert(.maskSecondaryFn) }
+        down.flags = flags
+        up.flags = []
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+
     private func runHUDDiagnostic(_ presentation: String) {
         let model = WaveHUDModel()
         let shouldAnimateSequence: Bool
@@ -350,13 +471,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shouldAnimateSequence = false
             model.state = .recording(UUID())
             model.level = 0.72
+        case "preparing":
+            shouldAnimateSequence = false
+            model.state = .preparing(UUID())
+            model.level = 0.03
         case "processing":
             shouldAnimateSequence = false
             model.state = .transcribing(UUID())
         case "no-speech":
             shouldAnimateSequence = false
             model.state = .failed(nil, .emptyTranscript)
+            model.messageTone = .warning
             model.message = "No speech detected"
+        case "error":
+            shouldAnimateSequence = false
+            model.state = .failed(nil, .unknown)
+            model.messageTone = .error
+            model.message = "Dictation failed"
         case "warning":
             shouldAnimateSequence = false
             model.state = .recording(UUID())
@@ -382,6 +513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     model.state = .transcribing(UUID())
                     try? await Task.sleep(for: .milliseconds(800))
                     model.state = .failed(nil, .emptyTranscript)
+                    model.messageTone = .warning
                     model.message = "No speech detected"
                     try? await Task.sleep(for: .milliseconds(1_100))
                     model.message = nil

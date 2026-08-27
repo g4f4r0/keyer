@@ -13,7 +13,7 @@ public enum TranscriptArchiveStatus: Equatable, Sendable {
         case .synced: "Synced with iCloud Drive"
         case let .pending(count): count == 1 ? "1 document waiting to sync" : "\(count) documents waiting to sync"
         case let .iCloudUnavailable(count):
-            count == 0 ? "iCloud Drive is unavailable" : "iCloud unavailable — \(count) saved locally"
+            count == 0 ? "iCloud Drive is unavailable" : "iCloud unavailable, \(count) saved locally"
         case let .failed(message, _): message
         }
     }
@@ -106,14 +106,44 @@ public actor TranscriptArchiveService {
             }
             return pendingCount() == 0 ? .synced : .pending(pendingCount())
         } catch {
-            let message = (error as NSError).localizedDescription
-                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            return .failed("iCloud sync failed — \(message)", pendingCount())
+            return .failed("iCloud sync failed", pendingCount())
         }
     }
 
     public func documentsURL() -> URL? {
         iCloudDocumentsURL(createIfNeeded: true)
+    }
+
+    public func documentsURL(for kind: TranscriptArchiveRecord.Kind) -> URL? {
+        guard let documents = iCloudDocumentsURL(createIfNeeded: true) else { return nil }
+        let directory = documents.appendingPathComponent(kind.folderName, isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            return directory
+        } catch {
+            return nil
+        }
+    }
+
+    public func documentURL(for record: TranscriptArchiveRecord) -> URL? {
+        guard let documents = iCloudDocumentsURL(createIfNeeded: true) else { return nil }
+        let directory = record.relativeDirectoryComponents.reduce(documents) {
+            $0.appendingPathComponent($1, isDirectory: true)
+        }
+        let stem = String(record.documentFilename.dropLast(3))
+        let candidates = ((try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []).filter {
+            $0.pathExtension == "md" && $0.deletingPathExtension().lastPathComponent.hasPrefix(stem)
+        }
+        let identifierLine = "id: \"\(record.id.uuidString.lowercased())\""
+        return candidates.first { candidate in
+            guard let contents = try? String(contentsOf: candidate, encoding: .utf8) else { return false }
+            return contents.split(separator: "\n", maxSplits: 16)
+                .contains(where: { $0 == Substring(identifierLine) })
+        }
     }
 
     private func synchronizePendingDirectory(_ pendingURL: URL, documentsURL: URL) throws {

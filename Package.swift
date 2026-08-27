@@ -8,22 +8,18 @@ let package = Package(
         .library(name: "WaveCore", targets: ["WaveCore"]),
         .executable(name: "Keyer", targets: ["Keyer"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.15.6"),
-    ],
+    dependencies: [],
     targets: [
         .target(name: "WaveCore"),
         .executableTarget(
             name: "Keyer",
-            dependencies: [
-                "WaveCore",
-                .product(name: "FluidAudio", package: "FluidAudio"),
-            ],
+            dependencies: ["WaveCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("ServiceManagement"),
+                .linkedFramework("Security"),
             ]
         ),
         .testTarget(name: "WaveCoreTests", dependencies: ["WaveCore"]),

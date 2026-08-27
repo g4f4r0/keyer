@@ -149,8 +149,9 @@ public enum TextNormalizer {
         var output = ""
         output.reserveCapacity(line.utf8.count)
         var pendingSpace = false
+        let scalars = Array(line.unicodeScalars)
 
-        for scalar in line.unicodeScalars {
+        for (index, scalar) in scalars.enumerated() {
             if CharacterSet.whitespaces.contains(scalar) {
                 pendingSpace = !output.isEmpty
                 continue
@@ -159,7 +160,12 @@ public enum TextNormalizer {
             if ",.!?;:%)]}".contains(character) {
                 while output.last == " " { output.removeLast() }
                 output.append(character)
-                pendingSpace = true
+                let nextIsNumber = scalars.indices.contains(index + 1)
+                    && CharacterSet.decimalDigits.contains(scalars[index + 1])
+                let isNumericSeparator = ",.:".contains(character)
+                    && output.dropLast().last?.isNumber == true
+                    && nextIsNumber
+                pendingSpace = !isNumericSeparator
             } else if "([{¿¡".contains(character) {
                 if pendingSpace, !output.isEmpty { output.append(" ") }
                 output.append(character)

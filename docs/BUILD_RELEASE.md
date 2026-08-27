@@ -10,11 +10,11 @@ xcodebuild -project Keyer.xcodeproj -scheme Keyer \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
-The Xcode project pins FluidAudio 0.15.6 and builds the Apple Silicon Release target with Swift 6 strict concurrency.
+The Xcode project has no third-party runtime dependency and builds the Apple Silicon Release target with Swift 6 strict concurrency.
 
 ## Developer ID archive
 
-Set your own team in Xcode; never commit team credentials or notarization secrets. Keyer publishes a public `iCloud.com.keyer.app` Documents scope through `NSUbiquitousContainers`, which macOS supports for an iCloud Drive folder without adding restricted iCloud entitlements. Then:
+Set your own team in Xcode; never commit team credentials or notarization secrets. Register `iCloud.com.keyer.app`, enable iCloud Documents and key-value storage for `com.keyer.app`, and regenerate the distribution profile before releasing. Then:
 
 ```sh
 xcodebuild archive \
@@ -35,7 +35,7 @@ codesign -d --entitlements :- "build/Keyer.xcarchive/Products/Applications/Keyer
 spctl --assess --type execute --verbose=2 "build/Keyer.xcarchive/Products/Applications/Keyer.app"
 ```
 
-Verify that the signed app keeps the expected microphone access, that its `Info.plist` publishes the `iCloud.com.keyer.app` document scope, and that it can write and reopen a Keyer document in iCloud Drive before testing with two Macs signed into the same Apple Account.
+Verify that the signed app keeps the expected microphone access, contains the expanded iCloud container and key-value entitlements, and can write and reopen a Keyer document in iCloud Drive before testing settings and Keychain propagation with two Macs signed into the same Apple Account.
 
 ## Notarization
 
