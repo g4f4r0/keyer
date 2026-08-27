@@ -97,10 +97,6 @@ private struct ProviderSettings: View {
                 }
                 .pickerStyle(.menu)
 
-                LabeledContent("Language") {
-                    Text("Automatic")
-                }
-
                 Text("Used for dictations and meeting transcripts")
                     .foregroundStyle(.secondary)
             }
