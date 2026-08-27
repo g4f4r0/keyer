@@ -31,6 +31,14 @@ struct KeyerConfiguration: Sendable {
 
     func string(_ key: String, default fallback: String) -> String { values[key] ?? fallback }
     func int(_ key: String, default fallback: Int) -> Int { values[key].flatMap(Int.init) ?? fallback }
+    func double(_ key: String, default fallback: Double) -> Double {
+        values[key].flatMap(Double.init) ?? fallback
+    }
+    func strings(_ key: String, default fallback: [String]) -> [String] {
+        guard let value = values[key] else { return fallback }
+        return value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
     func bool(_ key: String, default fallback: Bool) -> Bool {
         values[key].flatMap { Bool($0) } ?? fallback
     }
@@ -56,7 +64,7 @@ struct KeyerConfiguration: Sendable {
 private extension HoldShortcut {
     static var configurationDefault: HoldShortcut {
         let config = KeyerConfiguration.shared
-        guard config.string("shortcut.kind", default: "functionKey") == "keyboard" else { return .functionKey }
+        guard config.string("shortcut.kind", default: "function_key") == "keyboard" else { return .functionKey }
         return HoldShortcut(
             keyCode: UInt16(config.int("shortcut.key_code", default: 0)),
             modifiers: ShortcutModifiers(rawValue: UInt8(config.int("shortcut.modifiers", default: 0))),

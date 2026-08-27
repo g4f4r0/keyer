@@ -28,7 +28,9 @@ private struct MeetingPCMState: @unchecked Sendable {
 private final class StreamingPCMWriter: @unchecked Sendable {
     static let sampleRate = 16_000
     static let ringCapacity = 128_000
-    static let maximumSamples = sampleRate * 60 * 60 * 6
+    static let maximumSamples = sampleRate * 60 * 60 * KeyerConfiguration.shared.int(
+        "meetings.maximum_duration_hours", default: 6
+    )
 
     private let ring = OSAllocatedUnfairLock(
         initialState: MeetingPCMState(samples: Array(repeating: 0, count: ringCapacity))

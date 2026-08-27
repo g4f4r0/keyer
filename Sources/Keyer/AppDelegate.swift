@@ -32,7 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             client: client,
             configuration: providerSettings.configuration,
             usesMeetingModel: true,
-            timelineChunkSeconds: 60
+            timelineChunkSeconds: KeyerConfiguration.shared.int(
+                "performance.meeting_timeline_chunk_seconds", default: 60
+            )
         )
         let meetingLanguage = OpenRouterLanguageModelProvider(
             client: client,

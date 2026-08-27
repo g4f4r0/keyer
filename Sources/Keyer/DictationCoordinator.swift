@@ -304,7 +304,10 @@ final class DictationCoordinator: ObservableObject {
             }
             recordingLimitWarningTask = Task { [weak self] in
                 do {
-                    try await Task.sleep(for: .seconds(DictationRecordingPolicy.warningStartSeconds))
+                    let config = KeyerConfiguration.shared
+                    let maximum = config.double("dictation.maximum_duration_seconds", default: 900)
+                    let lead = config.double("dictation.warning_lead_time_seconds", default: 60)
+                    try await Task.sleep(for: .seconds(max(0, maximum - lead)))
                 } catch {
                     return
                 }

@@ -57,8 +57,12 @@ final class MeetingCoordinator: ObservableObject {
     private var processingTask: Task<Void, Never>?
     private var detectionTask: Task<Void, Never>?
     private var completionTask: Task<Void, Never>?
-    private static let savedVisibility = Duration.seconds(8)
-    private static let failureVisibility = Duration.seconds(10)
+    private static var savedVisibility: Duration { .seconds(KeyerConfiguration.shared.int(
+        "meetings.saved_message_seconds", default: 8
+    )) }
+    private static var failureVisibility: Duration { .seconds(KeyerConfiguration.shared.int(
+        "meetings.failure_message_seconds", default: 10
+    )) }
     private var activeStartedAt: Date?
     private var accumulatedSeconds: TimeInterval = 0
     private var meetingCreatedAt: Date?
@@ -360,7 +364,9 @@ final class MeetingCoordinator: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 self.checkForMeeting()
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: .seconds(KeyerConfiguration.shared.int(
+                    "meetings.detection_interval_seconds", default: 5
+                )))
             }
         }
     }
@@ -378,11 +384,16 @@ final class MeetingCoordinator: ObservableObject {
             lastCandidate = candidate
             candidateHits = 1
         }
-        if candidateHits >= 2 { setState(.suggested) }
+        if candidateHits >= KeyerConfiguration.shared.int(
+            "meetings.detection_hits_required", default: 2
+        ) { setState(.suggested) }
     }
 
     private static func meetingCandidate() -> String? {
-        let meetingBundleFragments = ["zoom.us", "msteams", "teams2", "webex"]
+        let meetingBundleFragments = KeyerConfiguration.shared.strings(
+            "meetings.detected_app_identifiers",
+            default: ["zoom.us", "msteams", "teams2", "webex"]
+        )
         if let match = NSWorkspace.shared.runningApplications.compactMap({ app -> String? in
             guard let id = app.bundleIdentifier?.lowercased() else { return nil }
             guard meetingBundleFragments.contains(where: id.contains) else { return nil }

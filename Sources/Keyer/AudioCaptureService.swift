@@ -148,7 +148,9 @@ private final class PCMAccumulator: @unchecked Sendable {
 
     static let sampleRate = 16_000
     static let ringCapacity = 128_000
-    static let maximumSamples = sampleRate * Int(DictationRecordingPolicy.maximumDurationSeconds)
+    static let maximumSamples = sampleRate * KeyerConfiguration.shared.int(
+        "dictation.maximum_duration_seconds", default: 900
+    )
 
     private let ring = OSAllocatedUnfairLock(initialState: PCMState(samples: Array(repeating: 0, count: ringCapacity)))
     private let outputQueue = DispatchQueue(label: "com.keyer.audio-drain", qos: .userInteractive)
