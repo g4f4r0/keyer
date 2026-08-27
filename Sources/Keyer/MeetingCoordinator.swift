@@ -233,8 +233,15 @@ final class MeetingCoordinator: ObservableObject {
     }
 
     private func process(_ capture: CapturedMeetingAudio) async {
+        let compressedAudioURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keyer-\(UUID().uuidString.lowercased()).m4a")
+        defer { try? FileManager.default.removeItem(at: compressedAudioURL) }
         do {
             await beforeProcessing()
+            async let audioCompression: Void = compressMeetingAudio(
+                capture.fileURL,
+                destination: compressedAudioURL
+            )
             let result = try await pipeline.process(
                 fileURL: capture.fileURL,
                 durationSeconds: capture.durationSeconds
@@ -247,8 +254,7 @@ final class MeetingCoordinator: ObservableObject {
                 id: UUID(),
                 createdAt: meetingCreatedAt ?? .now
             )
-            let compressedAudioURL = try await compressMeetingAudio(capture.fileURL)
-            defer { try? FileManager.default.removeItem(at: compressedAudioURL) }
+            try await audioCompression
             try await transcriptStore.syncMeeting(record, audioURL: compressedAudioURL)
             try? FileManager.default.removeItem(at: capture.fileURL)
             retryCapture = nil
@@ -261,9 +267,7 @@ final class MeetingCoordinator: ObservableObject {
         }
     }
 
-    private func compressMeetingAudio(_ sourceURL: URL) async throws -> URL {
-        let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("keyer-\(UUID().uuidString.lowercased()).m4a")
+    private func compressMeetingAudio(_ sourceURL: URL, destination: URL) async throws {
         let asset = AVURLAsset(url: sourceURL)
         guard let exporter = AVAssetExportSession(
             asset: asset,
@@ -272,7 +276,6 @@ final class MeetingCoordinator: ObservableObject {
             throw CloudProviderError.invalidResponse
         }
         try await exporter.export(to: destination, as: .m4a)
-        return destination
     }
 
     private func startElapsedTimer() {
