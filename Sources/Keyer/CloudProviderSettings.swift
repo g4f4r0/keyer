@@ -2,8 +2,71 @@ import Foundation
 import Security
 import WaveCore
 
+struct KeyerConfiguration: Sendable {
+    static let shared = KeyerConfiguration()
+    private let values: [String: String]
+
+    private init() {
+        let bundled = Bundle.main.url(forResource: "config", withExtension: "toml")
+        let development = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("config.toml")
+        let contents = bundled.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+            ?? (try? String(contentsOf: development, encoding: .utf8)) ?? ""
+        var section = ""
+        var parsed: [String: String] = [:]
+        for rawLine in contents.split(whereSeparator: \Character.isNewline) {
+            let line = rawLine.split(separator: "#", maxSplits: 1).first?
+                .trimmingCharacters(in: .whitespaces) ?? ""
+            if line.hasPrefix("["), line.hasSuffix("]") {
+                section = String(line.dropFirst().dropLast())
+            } else if let separator = line.firstIndex(of: "=") {
+                let key = line[..<separator].trimmingCharacters(in: .whitespaces)
+                var value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+                if value.hasPrefix("\"") && value.hasSuffix("\"") { value = String(value.dropFirst().dropLast()) }
+                parsed["\(section).\(key)"] = value
+            }
+        }
+        values = parsed
+    }
+
+    func string(_ key: String, default fallback: String) -> String { values[key] ?? fallback }
+    func int(_ key: String, default fallback: Int) -> Int { values[key].flatMap(Int.init) ?? fallback }
+    func bool(_ key: String, default fallback: Bool) -> Bool {
+        values[key].flatMap { Bool($0) } ?? fallback
+    }
+
+    func registerDefaults() {
+        let shortcut = HoldShortcut.configurationDefault
+        UserDefaults.standard.register(defaults: [
+            "show-menu-bar-icon": bool("app.show_menu_bar_icon", default: true),
+            "show-dock-icon": bool("app.show_dock_icon", default: false),
+            "input-device-uid": string("dictation.input_device_uid", default: ""),
+            "clean-up-spoken-text": bool("dictation.clean_up_spoken_text", default: true),
+            "show-meeting-controls": bool("meetings.show_controls", default: true),
+            "suggest-meetings": bool("meetings.suggest_meetings", default: true),
+            "openrouter-speech-model": string("models.speech", default: "nvidia/parakeet-tdt-0.6b-v3"),
+            "openrouter-text-model": string("models.text", default: "openai/gpt-5.6-luna"),
+            "hold-shortcut": (try? JSONEncoder().encode(shortcut)) ?? Data(),
+        ])
+    }
+}
+
+private extension HoldShortcut {
+    static var configurationDefault: HoldShortcut {
+        let config = KeyerConfiguration.shared
+        guard config.string("shortcut.kind", default: "functionKey") == "keyboard" else { return .functionKey }
+        return HoldShortcut(
+            keyCode: UInt16(config.int("shortcut.key_code", default: 0)),
+            modifiers: ShortcutModifiers(rawValue: UInt8(config.int("shortcut.modifiers", default: 0))),
+            keyLabel: config.string("shortcut.key_label", default: "")
+        )
+    }
+}
+
 actor RemoteTranscriptStore {
-    private let baseURL = URL(string: "https://keyer.hellogafaro.net/api/records")!
+    private let baseURL = URL(string: KeyerConfiguration.shared.string(
+        "server.url", default: "https://keyer.hellogafaro.net"
+    ))!.appendingPathComponent("api/records")
 
     func sync(_ record: TranscriptArchiveRecord) async throws {
         guard let token = try ProviderKeychain(
@@ -111,7 +174,7 @@ private actor OpenRouterModelCatalog {
 
 @MainActor
 final class CloudProviderSettings: ObservableObject {
-    static let defaultSpeechModel = "qwen/qwen3-asr-1.7b"
+    static let defaultSpeechModel = "nvidia/parakeet-tdt-0.6b-v3"
     static let defaultTextModel = "openai/gpt-5.6-luna"
 
     @Published private(set) var hasAPIKey: Bool

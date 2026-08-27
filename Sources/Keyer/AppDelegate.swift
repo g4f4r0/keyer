@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let diagnosticPeak = OSAllocatedUnfairLock(initialState: Float.zero)
 
     override init() {
+        KeyerConfiguration.shared.registerDefaults()
         let providerSettings = CloudProviderSettings()
         let client = OpenRouterClient(configuration: providerSettings.configuration)
         let speech = OpenRouterSpeechTranscriptionProvider(

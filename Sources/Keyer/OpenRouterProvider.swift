@@ -84,7 +84,10 @@ actor OpenRouterClient {
             } catch {
                 throw error
             }
-            try await Task.sleep(for: .milliseconds(180))
+            let retryDelay = KeyerConfiguration.shared.int(
+                "performance.retry_delay_milliseconds", default: 180
+            )
+            try await Task.sleep(for: .milliseconds(retryDelay))
         }
         throw lastError ?? CloudProviderError.invalidResponse
     }
@@ -116,7 +119,9 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
         displayName: "OpenRouter speech"
     )
 
-    private static let maximumUploadBytes = 24 * 1_024 * 1_024
+    private static let maximumUploadBytes = KeyerConfiguration.shared.int(
+        "performance.maximum_upload_megabytes", default: 24
+    ) * 1_024 * 1_024
     private let client: OpenRouterClient
     private let configuration: CloudProviderConfiguration
 
@@ -177,7 +182,10 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
         while remaining > 0 {
             try Task.checkCancellation()
             var batch: [(Int, Data)] = []
-            for _ in 0..<3 where remaining > 0 {
+            let concurrency = max(1, KeyerConfiguration.shared.int(
+                "performance.concurrent_transcription_chunks", default: 3
+            ))
+            for _ in 0..<concurrency where remaining > 0 {
                 let requested = min(primaryBytes, remaining) & ~1
                 guard requested > 0,
                       let primary = try handle.read(upToCount: requested),
@@ -230,7 +238,10 @@ actor OpenRouterSpeechTranscriptionProvider: SpeechTranscriptionProvider {
         var results = Array(repeating: "", count: chunks.count)
         var nextIndex = 0
         while nextIndex < chunks.count {
-            let end = min(nextIndex + 3, chunks.count)
+            let concurrency = max(1, KeyerConfiguration.shared.int(
+                "performance.concurrent_transcription_chunks", default: 3
+            ))
+            let end = min(nextIndex + concurrency, chunks.count)
             try await withThrowingTaskGroup(of: (Int, String).self) { group in
                 for index in nextIndex..<end {
                     let chunk = chunks[index]

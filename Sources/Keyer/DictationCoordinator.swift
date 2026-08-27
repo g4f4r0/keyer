@@ -387,7 +387,6 @@ final class DictationCoordinator: ObservableObject {
                     model: resultModel,
                     audioDurationSeconds: captured.durationSeconds
                 )
-                try await self.transcriptStore.sync(archiveRecord)
                 let insertionStart = ContinuousClock.now
                 self.event("insertionStarted", id: id)
                 let insertion = await self.inserter.insert(transcript, at: self.destination)
@@ -400,6 +399,7 @@ final class DictationCoordinator: ObservableObject {
                     try self.machine.apply(.recovered(id))
                     self.showTransientMessage("Copied to clipboard", tone: .warning)
                 }
+                try await self.transcriptStore.sync(archiveRecord)
                 let total = self.sessionStartedAt.map(self.elapsedMS(since:)) ?? 0
                 self.metrics.append(.init(sessionID: id, totalMilliseconds: total,
                                           audioFinalizationMilliseconds: captured.finalizationMilliseconds,

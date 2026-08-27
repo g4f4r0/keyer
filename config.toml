@@ -1,0 +1,31 @@
+# Keyer configuration. Secrets stay in macOS Keychain.
+
+[app]
+show_menu_bar_icon = true
+show_dock_icon = false
+
+[dictation]
+input_device_uid = ""
+clean_up_spoken_text = true
+
+[shortcut]
+kind = "functionKey"
+key_code = 0
+modifiers = 16
+key_label = "fn"
+
+[meetings]
+show_controls = true
+suggest_meetings = true
+
+[models]
+speech = "nvidia/parakeet-tdt-0.6b-v3"
+text = "openai/gpt-5.6-luna"
+
+[server]
+url = "https://keyer.hellogafaro.net"
+
+[performance]
+maximum_upload_megabytes = 24
+concurrent_transcription_chunks = 3
+retry_delay_milliseconds = 180

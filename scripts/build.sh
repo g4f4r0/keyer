@@ -27,6 +27,7 @@ staged_app="$staging_directory/Keyer.app"
 trap 'rm -rf "$staging_directory"' EXIT
 
 cp -R "$xcode_app" "$staged_app"
+cp "$project_root/config.toml" "$staged_app/Contents/Resources/config.toml"
 
 icon_source="$project_root/Resources/KeyerIcon.png"
 iconset="$staging_directory/AppIcon.iconset"
