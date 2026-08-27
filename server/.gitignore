@@ -2,4 +2,3 @@ node_modules/
 .output/
 .env
 data/
-routeTree.gen.ts
