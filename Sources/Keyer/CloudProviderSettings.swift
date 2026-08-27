@@ -33,6 +33,36 @@ actor CloudProviderConfiguration {
     func setTextModel(_ value: String) { textModel = value }
 }
 
+struct OpenRouterModelChoice: Identifiable, Equatable, Sendable {
+    let name: String
+    let identifier: String
+    var id: String { identifier }
+}
+
+private actor OpenRouterModelCatalog {
+    private struct Response: Decodable { let data: [Model] }
+    private struct Model: Decodable {
+        let id: String
+        let name: String
+    }
+
+    func models(outputModality: String, apiKey: String) async throws -> [OpenRouterModelChoice] {
+        var components = URLComponents(string: "https://openrouter.ai/api/v1/models")!
+        components.queryItems = [URLQueryItem(name: "output_modalities", value: outputModality)]
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("https://github.com/g4f4r0/keyer", forHTTPHeaderField: "HTTP-Referer")
+        request.setValue("Keyer", forHTTPHeaderField: "X-Title")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw CloudProviderError.invalidResponse
+        }
+        return try JSONDecoder().decode(Response.self, from: data).data
+            .map { OpenRouterModelChoice(name: $0.name, identifier: $0.id) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
 @MainActor
 final class CloudProviderSettings: ObservableObject {
     static let defaultSpeechModel = "qwen/qwen3-asr-1.7b"
@@ -40,6 +70,10 @@ final class CloudProviderSettings: ObservableObject {
 
     @Published private(set) var hasAPIKey: Bool
     @Published private(set) var credentialMessage = ""
+    @Published private(set) var speechModels: [OpenRouterModelChoice] = []
+    @Published private(set) var textModels: [OpenRouterModelChoice] = []
+    @Published private(set) var isLoadingModels = false
+    @Published private(set) var modelCatalogMessage = ""
     @Published var speechModel: String {
         didSet {
             UserDefaults.standard.set(speechModel, forKey: "openrouter-speech-model")
@@ -55,6 +89,7 @@ final class CloudProviderSettings: ObservableObject {
 
     let configuration: CloudProviderConfiguration
     private let keychain = ProviderKeychain()
+    private let catalog = OpenRouterModelCatalog()
 
     init() {
         let apiKey = try? keychain.read()
@@ -83,6 +118,7 @@ final class CloudProviderSettings: ObservableObject {
             await configuration.setAPIKey(value)
             hasAPIKey = true
             credentialMessage = "Saved securely"
+            await refreshModels()
         } catch {
             credentialMessage = "Couldn’t save the API key"
         }
@@ -93,9 +129,29 @@ final class CloudProviderSettings: ObservableObject {
             try keychain.remove()
             await configuration.setAPIKey(nil)
             hasAPIKey = false
+            speechModels = []
+            textModels = []
+            modelCatalogMessage = ""
             credentialMessage = "API key removed"
         } catch {
             credentialMessage = "Couldn’t remove the API key"
+        }
+    }
+
+    func refreshModels() async {
+        guard hasAPIKey else { return }
+        isLoadingModels = true
+        defer { isLoadingModels = false }
+        do {
+            let snapshot = try await configuration.snapshot()
+            let apiKey = snapshot.apiKey
+            async let speech = catalog.models(outputModality: "transcription", apiKey: apiKey)
+            async let text = catalog.models(outputModality: "text", apiKey: apiKey)
+            speechModels = try await speech
+            textModels = try await text
+            modelCatalogMessage = ""
+        } catch {
+            modelCatalogMessage = "Couldn’t load the OpenRouter model catalog"
         }
     }
 
@@ -161,7 +217,6 @@ private struct ProviderKeychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseDataProtectionKeychain as String: kCFBooleanTrue!,
         ]
     }
 }

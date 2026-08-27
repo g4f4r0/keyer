@@ -25,7 +25,7 @@ struct KeyerApp: App {
                 providerSettings: appDelegate.providerSettings
             )
         }
-        .defaultSize(width: 620, height: 440)
+        .defaultSize(width: 620, height: 460)
     }
 }
 

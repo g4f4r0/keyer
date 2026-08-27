@@ -31,7 +31,7 @@ struct SettingsView: View {
                 ProviderSettings(settings: providerSettings)
             }
         }
-        .frame(minWidth: 620, minHeight: 560)
+        .frame(width: 620, height: 460)
         .onAppear {
             if selectedTab == "transcription" { selectedTab = SettingsTab.models.rawValue }
         }
@@ -41,21 +41,6 @@ struct SettingsView: View {
 private struct ProviderSettings: View {
     @ObservedObject var settings: CloudProviderSettings
     @State private var apiKey = ""
-
-    private let speechModels = [
-        ModelChoice("Qwen3 ASR 1.7B", "qwen/qwen3-asr-1.7b", "Quality candidate"),
-        ModelChoice("Qwen3 ASR 0.6B", "qwen/qwen3-asr-0.6b", "Speed candidate"),
-        ModelChoice("Nemotron 3.5 ASR 0.6B", "nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b", "Latency candidate"),
-        ModelChoice("GPT Transcribe", "openai/gpt-transcribe", "Accuracy candidate"),
-        ModelChoice("Voxtral Mini Transcribe", "mistralai/voxtral-mini-transcribe", "Meeting candidate"),
-    ]
-
-    private let textModels = [
-        ModelChoice("GPT-5.6 Luna", "openai/gpt-5.6-luna", "Fast structured output"),
-        ModelChoice("GPT-5 Nano", "openai/gpt-5-nano", "Low latency and cost"),
-        ModelChoice("Gemini 3.7 Flash", "google/gemini-3.7-flash", "Fast long context"),
-        ModelChoice("Nemotron 3.5 Lightning", "nvidia/nemotron-3.5-lightning", "Low cost candidate"),
-    ]
 
     var body: some View {
         Form {
@@ -88,16 +73,33 @@ private struct ProviderSettings: View {
                     Text(settings.credentialMessage)
                         .foregroundStyle(.secondary)
                 }
+
+                if settings.hasAPIKey {
+                    HStack {
+                        if settings.isLoadingModels {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading models…")
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Refresh Models", systemImage: "arrow.clockwise") {
+                            Task { await settings.refreshModels() }
+                        }
+                        .disabled(settings.isLoadingModels)
+                    }
+                }
+
+                if !settings.modelCatalogMessage.isEmpty {
+                    Text(settings.modelCatalogMessage)
+                        .foregroundStyle(.red)
+                }
             }
 
             Section("Speech to text") {
                 Picker("Model", selection: $settings.speechModel) {
                     ForEach(speechChoices) { choice in
-                        VStack(alignment: .leading) {
-                            Text(choice.name)
-                            Text(choice.note).foregroundStyle(.secondary)
-                        }
-                        .tag(choice.identifier)
+                        Text(choice.name).tag(choice.identifier)
                     }
                 }
                 .pickerStyle(.menu)
@@ -113,11 +115,7 @@ private struct ProviderSettings: View {
             Section("Writing and summaries") {
                 Picker("Model", selection: $settings.textModel) {
                     ForEach(textChoices) { choice in
-                        VStack(alignment: .leading) {
-                            Text(choice.name)
-                            Text(choice.note).foregroundStyle(.secondary)
-                        }
-                        .tag(choice.identifier)
+                        Text(choice.name).tag(choice.identifier)
                     }
                 }
                 .pickerStyle(.menu)
@@ -132,32 +130,27 @@ private struct ProviderSettings: View {
             }
         }
         .formStyle(.grouped)
-    }
-
-    private var speechChoices: [ModelChoice] {
-        choices(speechModels, current: settings.speechModel)
-    }
-
-    private var textChoices: [ModelChoice] {
-        choices(textModels, current: settings.textModel)
-    }
-
-    private func choices(_ choices: [ModelChoice], current: String) -> [ModelChoice] {
-        if choices.contains(where: { $0.identifier == current }) { return choices }
-        return [ModelChoice(current, current, "Custom model")] + choices
-    }
-
-    private struct ModelChoice: Identifiable {
-        let name: String
-        let identifier: String
-        let note: String
-        var id: String { identifier }
-
-        init(_ name: String, _ identifier: String, _ note: String) {
-            self.name = name
-            self.identifier = identifier
-            self.note = note
+        .task {
+            if settings.hasAPIKey && settings.speechModels.isEmpty {
+                await settings.refreshModels()
+            }
         }
+    }
+
+    private var speechChoices: [OpenRouterModelChoice] {
+        choices(settings.speechModels, current: settings.speechModel)
+    }
+
+    private var textChoices: [OpenRouterModelChoice] {
+        choices(settings.textModels, current: settings.textModel)
+    }
+
+    private func choices(
+        _ choices: [OpenRouterModelChoice],
+        current: String
+    ) -> [OpenRouterModelChoice] {
+        if choices.contains(where: { $0.identifier == current }) { return choices }
+        return [OpenRouterModelChoice(name: current, identifier: current)] + choices
     }
 }
 
