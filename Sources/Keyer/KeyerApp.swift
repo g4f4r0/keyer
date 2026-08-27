@@ -48,16 +48,6 @@ private struct KeyerMenu: View {
 
         Divider()
 
-        Button("Open Meeting History", systemImage: "person.2") {
-            coordinator.openTranscriptArchive(kind: .meeting)
-        }
-
-        Button("Open Dictation History", systemImage: "text.document") {
-            coordinator.openTranscriptArchive(kind: .dictation)
-        }
-
-        Divider()
-
         SettingsLink {
             Label("Settings…", systemImage: "gearshape")
         }

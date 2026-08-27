@@ -74,19 +74,12 @@ private struct ProviderSettings: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if settings.hasAPIKey {
-                    HStack {
-                        if settings.isLoadingModels {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Loading models…")
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Refresh Models", systemImage: "arrow.clockwise") {
-                            Task { await settings.refreshModels() }
-                        }
-                        .disabled(settings.isLoadingModels)
+                if settings.isLoadingModels {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading models…")
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -131,7 +124,7 @@ private struct ProviderSettings: View {
         }
         .formStyle(.grouped)
         .task {
-            if settings.hasAPIKey && settings.speechModels.isEmpty {
+            if settings.hasAPIKey {
                 await settings.refreshModels()
             }
         }
@@ -235,23 +228,6 @@ private struct GeneralSettings: View {
             Section("Writing") {
                 Toggle("Clean up spoken text", isOn: $coordinator.cleanUpSpokenText)
                 Text("Locally removes filler words, repeated starts, and common spoken corrections. Keeps your language, meaning, and tone.")
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Local History") {
-                LabeledContent("Status") {
-                    Label(coordinator.transcriptArchiveStatus.label,
-                          systemImage: coordinator.transcriptArchiveStatus.isAvailable
-                            ? "checkmark.circle.fill" : "exclamationmark.circle")
-                        .foregroundStyle(coordinator.transcriptArchiveStatus.isAvailable
-                            ? .green : .secondary)
-                }
-
-                Button("Open Keyer History") {
-                    coordinator.openTranscriptArchive()
-                }
-
-                Text("Completed dictations and meetings are saved as readable Markdown files in Documents/Keyer")
                     .foregroundStyle(.secondary)
             }
 
