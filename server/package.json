@@ -15,8 +15,7 @@
     "@tanstack/react-start": "^1.168.27",
     "nitro": "^3.0.1-alpha.1",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-icons": "^5.5.0"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/bun": "latest",
