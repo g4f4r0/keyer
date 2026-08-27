@@ -45,6 +45,8 @@ struct KeyerConfiguration: Sendable {
             "show-meeting-controls": bool("meetings.show_controls", default: true),
             "suggest-meetings": bool("meetings.suggest_meetings", default: true),
             "openrouter-speech-model": string("models.speech", default: "nvidia/parakeet-tdt-0.6b-v3"),
+            "openrouter-meeting-speech-model": string("models.meeting_speech", default: "openai/gpt-transcribe:nitro"),
+            "openrouter-meeting-summary-model": string("models.meeting_summary", default: "nvidia/nemotron-3.5-lightning:nitro"),
             "openrouter-text-model": string("models.text", default: "openai/gpt-5.6-luna"),
             "hold-shortcut": (try? JSONEncoder().encode(shortcut)) ?? Data(),
         ])
@@ -113,17 +115,24 @@ actor RemoteTranscriptStore {
 struct CloudProviderSnapshot: Sendable {
     let apiKey: String
     let speechModel: String
+    let meetingSpeechModel: String
+    let meetingSummaryModel: String
     let textModel: String
 }
 
 actor CloudProviderConfiguration {
     private var apiKey: String?
     private var speechModel: String
+    private var meetingSpeechModel: String
+    private var meetingSummaryModel: String
     private var textModel: String
 
-    init(apiKey: String?, speechModel: String, textModel: String) {
+    init(apiKey: String?, speechModel: String, meetingSpeechModel: String,
+         meetingSummaryModel: String, textModel: String) {
         self.apiKey = apiKey
         self.speechModel = speechModel
+        self.meetingSpeechModel = meetingSpeechModel
+        self.meetingSummaryModel = meetingSummaryModel
         self.textModel = textModel
     }
 
@@ -132,6 +141,8 @@ actor CloudProviderConfiguration {
         return CloudProviderSnapshot(
             apiKey: apiKey,
             speechModel: speechModel,
+            meetingSpeechModel: meetingSpeechModel,
+            meetingSummaryModel: meetingSummaryModel,
             textModel: textModel
         )
     }
@@ -139,6 +150,8 @@ actor CloudProviderConfiguration {
     func hasAPIKey() -> Bool { apiKey?.isEmpty == false }
     func setAPIKey(_ value: String?) { apiKey = value }
     func setSpeechModel(_ value: String) { speechModel = value }
+    func setMeetingSpeechModel(_ value: String) { meetingSpeechModel = value }
+    func setMeetingSummaryModel(_ value: String) { meetingSummaryModel = value }
     func setTextModel(_ value: String) { textModel = value }
 }
 
@@ -160,8 +173,10 @@ private actor OpenRouterModelCatalog {
         components.queryItems = [URLQueryItem(name: "output_modalities", value: outputModality)]
         var request = URLRequest(url: components.url!)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("https://github.com/g4f4r0/keyer", forHTTPHeaderField: "HTTP-Referer")
-        request.setValue("Keyer", forHTTPHeaderField: "X-Title")
+        if KeyerConfiguration.shared.bool("privacy.app_attribution", default: false) {
+            request.setValue("https://github.com/g4f4r0/keyer", forHTTPHeaderField: "HTTP-Referer")
+            request.setValue("Keyer", forHTTPHeaderField: "X-Title")
+        }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
             throw CloudProviderError.invalidResponse
@@ -175,6 +190,8 @@ private actor OpenRouterModelCatalog {
 @MainActor
 final class CloudProviderSettings: ObservableObject {
     static let defaultSpeechModel = "nvidia/parakeet-tdt-0.6b-v3"
+    static let defaultMeetingSpeechModel = "openai/gpt-transcribe:nitro"
+    static let defaultMeetingSummaryModel = "nvidia/nemotron-3.5-lightning:nitro"
     static let defaultTextModel = "openai/gpt-5.6-luna"
 
     @Published private(set) var hasAPIKey: Bool
@@ -187,6 +204,18 @@ final class CloudProviderSettings: ObservableObject {
         didSet {
             UserDefaults.standard.set(speechModel, forKey: "openrouter-speech-model")
             Task { await configuration.setSpeechModel(speechModel) }
+        }
+    }
+    @Published var meetingSpeechModel: String {
+        didSet {
+            UserDefaults.standard.set(meetingSpeechModel, forKey: "openrouter-meeting-speech-model")
+            Task { await configuration.setMeetingSpeechModel(meetingSpeechModel) }
+        }
+    }
+    @Published var meetingSummaryModel: String {
+        didSet {
+            UserDefaults.standard.set(meetingSummaryModel, forKey: "openrouter-meeting-summary-model")
+            Task { await configuration.setMeetingSummaryModel(meetingSummaryModel) }
         }
     }
     @Published var textModel: String {
@@ -204,14 +233,22 @@ final class CloudProviderSettings: ObservableObject {
         let apiKey = try? keychain.read()
         let speechModel = UserDefaults.standard.string(forKey: "openrouter-speech-model")
             ?? Self.defaultSpeechModel
+        let meetingSpeechModel = UserDefaults.standard.string(forKey: "openrouter-meeting-speech-model")
+            ?? Self.defaultMeetingSpeechModel
+        let meetingSummaryModel = UserDefaults.standard.string(forKey: "openrouter-meeting-summary-model")
+            ?? Self.defaultMeetingSummaryModel
         let textModel = UserDefaults.standard.string(forKey: "openrouter-text-model")
             ?? Self.defaultTextModel
         self.speechModel = speechModel
+        self.meetingSpeechModel = meetingSpeechModel
+        self.meetingSummaryModel = meetingSummaryModel
         self.textModel = textModel
         hasAPIKey = apiKey?.isEmpty == false
         configuration = CloudProviderConfiguration(
             apiKey: apiKey,
             speechModel: speechModel,
+            meetingSpeechModel: meetingSpeechModel,
+            meetingSummaryModel: meetingSummaryModel,
             textModel: textModel
         )
     }

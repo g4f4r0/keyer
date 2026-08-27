@@ -89,32 +89,33 @@ private struct ProviderSettings: View {
                 }
             }
 
-            Section("Speech to text") {
-                Picker("Model", selection: $settings.speechModel) {
+            Section("Dictation") {
+                Picker("Transcription", selection: $settings.speechModel) {
                     ForEach(speechChoices) { choice in
                         Text(choice.name).tag(choice.identifier)
                     }
                 }
                 .pickerStyle(.menu)
-
-                Text("Used for dictations and meeting transcripts")
-                    .foregroundStyle(.secondary)
             }
 
-            Section("Writing and summaries") {
-                Picker("Model", selection: $settings.textModel) {
-                    ForEach(textChoices) { choice in
+            Section("Meetings") {
+                Picker("Transcription", selection: $settings.meetingSpeechModel) {
+                    ForEach(meetingSpeechChoices) { choice in
                         Text(choice.name).tag(choice.identifier)
                     }
                 }
                 .pickerStyle(.menu)
 
-                Text("Used for spoken-text cleanup, meeting titles, summaries, and actions")
-                    .foregroundStyle(.secondary)
+                Picker("Summary", selection: $settings.meetingSummaryModel) {
+                    ForEach(meetingSummaryChoices) { choice in
+                        Text(choice.name).tag(choice.identifier)
+                    }
+                }
+                .pickerStyle(.menu)
             }
 
             Section {
-                Text("Models are independent so each task can be optimized for quality, price, and latency. Your API key stays in this Mac’s Keychain")
+                Text("Private routing requires zero-data-retention providers and rejects provider training. Your API key stays in this Mac’s Keychain")
                     .foregroundStyle(.secondary)
             }
         }
@@ -130,8 +131,12 @@ private struct ProviderSettings: View {
         choices(settings.speechModels, current: settings.speechModel)
     }
 
-    private var textChoices: [OpenRouterModelChoice] {
-        choices(settings.textModels, current: settings.textModel)
+    private var meetingSpeechChoices: [OpenRouterModelChoice] {
+        choices(settings.speechModels, current: settings.meetingSpeechModel)
+    }
+
+    private var meetingSummaryChoices: [OpenRouterModelChoice] {
+        choices(settings.textModels, current: settings.meetingSummaryModel)
     }
 
     private func choices(

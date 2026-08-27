@@ -21,7 +21,13 @@ suggest_meetings = true
 [models]
 speech = "nvidia/parakeet-tdt-0.6b-v3"
 meeting_speech = "openai/gpt-transcribe:nitro"
+meeting_summary = "nvidia/nemotron-3.5-lightning:nitro"
 text = "openai/gpt-5.6-luna"
+
+[privacy]
+zero_data_retention = true
+deny_provider_data_collection = true
+app_attribution = false
 
 [server]
 url = "https://keyer.hellogafaro.net"
