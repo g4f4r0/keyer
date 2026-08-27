@@ -441,6 +441,8 @@ import Testing
 
     We approved the release.
 
+    ## Actions
+
     - James will publish the build
     - Ana will update the notes
 

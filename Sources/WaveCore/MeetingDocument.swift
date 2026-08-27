@@ -14,10 +14,18 @@ public struct MeetingDocument: Equatable, Sendable {
         let summary = intelligence.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let transcript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         var sections = ["# \(title)", "## Summary", summary]
+        let timeline = intelligence.timeline
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !timeline.isEmpty {
+            sections.append("## Timeline")
+            sections.append(timeline.map { "- \($0)" }.joined(separator: "\n"))
+        }
         let actions = intelligence.actions
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         if !actions.isEmpty {
+            sections.append("## Actions")
             sections.append(actions.map { "- \($0)" }.joined(separator: "\n"))
         }
         sections.append("## Transcript")

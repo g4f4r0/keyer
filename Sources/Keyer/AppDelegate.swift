@@ -33,7 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             configuration: providerSettings.configuration,
             modelOverride: KeyerConfiguration.shared.string(
                 "models.meeting_speech", default: "openai/gpt-transcribe:nitro"
-            )
+            ),
+            timelineChunkSeconds: 60
         )
         let language = OpenRouterLanguageModelProvider(
             client: client,

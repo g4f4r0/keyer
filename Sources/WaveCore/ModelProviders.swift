@@ -176,11 +176,13 @@ public struct MeetingSummaryRequest: Equatable, Sendable {
 public struct MeetingSummary: Codable, Equatable, Sendable {
     public let title: String
     public let summary: String
+    public let timeline: [String]
     public let actions: [String]
 
-    public init(title: String, summary: String, actions: [String]) {
+    public init(title: String, summary: String, timeline: [String] = [], actions: [String]) {
         self.title = title
         self.summary = summary
+        self.timeline = timeline
         self.actions = actions
     }
 }
@@ -321,6 +323,7 @@ private extension MeetingSummary {
         return MeetingSummary(
             title: cleanedTitle,
             summary: TextNormalizer.normalize(summary),
+            timeline: timeline.map(TextNormalizer.normalize).filter { !$0.isEmpty },
             actions: cleanedActions
         )
     }
